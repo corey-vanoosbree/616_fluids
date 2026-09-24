@@ -46,6 +46,42 @@ def parse_flow_pressure_groups(filename):
 
     return list(groups.items())
 
+def parse_globe_valve_groups(filename):
+    """Group globe-valve rows by logging note (one valve-opening/flow-rate setting)
+    and return per-group flow rate and pressure drop readings, in file order."""
+    groups = {}
+    with open(filename, "r", encoding="utf-8", errors="replace") as f:
+        lines = f.readlines()
+
+    for line in lines[4:]:
+        fields = line.rstrip("\n").split("\t")
+        if len(fields) < 4:
+            continue
+        try:
+            flow = float(fields[1])
+            pressure_psid = float(fields[2])
+        except ValueError:
+            continue
+        note = fields[3].strip()
+        if "globe" not in note.lower():
+            continue
+        groups.setdefault(note, []).append((flow, pressure_psid))
+
+    return list(groups.items())
+
+def globe_valve_rows(groups):
+    """Return avg_flow (LPM), avg_delta_p (Pa), and friction loss as specific energy
+    (J/kg) per group."""
+    rows = []
+    for note, readings in groups:
+        flows = [flow for flow, _ in readings]
+        pressures_pa = [psid * PSI_TO_PA for _, psid in readings]
+        avg_flow = statistics.mean(flows)
+        avg_dp = statistics.mean(pressures_pa)
+        friction_loss = avg_dp / rho  # specific energy loss, J/kg
+        rows.append((avg_flow, avg_dp, friction_loss))
+    return sorted(rows)
+
 def averages_with_error(groups):
     """Return diameter, avg_flow, std_flow, avg_delta_p (Pa), std_delta_p (Pa) per group."""
     rows = []
@@ -129,6 +165,20 @@ def create_plot(rows, filename="flow_vs_pressure.png"):
     ax.set_ylabel("Pressure Drop (Pa)")
     ax.set_title("Pressure Drop vs. Flow Rate by Pipe Diameter")
     ax.legend()
+    ax.grid(True, which="both")
+    fig.tight_layout()
+    fig.savefig(filename, dpi=200)
+    plt.close(fig)
+    print(f"Saved plot to {filename}")
+
+def create_globe_valve_plot(x, y, xlabel, ylabel, title, filename):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(x, y, 'o', color="tab:purple", alpha=0.8)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
     ax.grid(True, which="both")
     fig.tight_layout()
     fig.savefig(filename, dpi=200)
@@ -266,3 +316,19 @@ create_regime_comparison_plot(
     friction_results, lambda re: re > TURBULENT_RE, lambda re: churchill_fanning(re, eps_over_d),
     "Churchill correlation", "Turbulent Friction Factor vs. Churchill Correlation",
     "turbulent_friction_churchill.png")
+
+globe_groups = parse_globe_valve_groups("FLU_Prelab_Highflow")
+globe_rows = globe_valve_rows(globe_groups)
+
+for avg_flow, avg_dp, friction_loss in globe_rows:
+    print(f'Globe valve: Q={avg_flow:.2f} LPM, dP={avg_dp:.1f} Pa, friction loss={friction_loss:.2f} J/kg')
+
+create_globe_valve_plot(
+    [r[0] for r in globe_rows], [r[2] for r in globe_rows],
+    "Flow Rate (LPM)", "Friction Loss (J/kg)", "Friction Loss vs. Flow Rate (Globe Valve)",
+    "globe_valve_friction_loss_vs_flow.png")
+
+create_globe_valve_plot(
+    [r[1] for r in globe_rows], [r[2] for r in globe_rows],
+    "Pressure Drop (Pa)", "Friction Loss (J/kg)", "Friction Loss vs. Pressure Drop (Globe Valve)",
+    "globe_valve_friction_loss_vs_pressure.png")
