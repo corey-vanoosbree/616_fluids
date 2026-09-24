@@ -163,38 +163,37 @@ def create_friction_plot(results, filename="friction_factor_vs_reynolds.png"):
     plt.close(fig)
     print(f"Saved plot to {filename}")
 
-def create_laminar_comparison_plot(results, filename="laminar_friction_comparison.png"):
-    """Compare the laminar-regime (Re < 2300) data to the f = 16/Re correlation
-    for the Fanning friction factor."""
-    laminar = [r for r in results if r[1] < LAMINAR_RE]
-    if not laminar:
-        print("No laminar-regime data to plot.")
+def create_regime_comparison_plot(results, regime_filter, correlation, correlation_label, title, filename):
+    """Compare friction factor data within a Re range to a theoretical correlation."""
+    subset_all = [r for r in results if regime_filter(r[1])]
+    if not subset_all:
+        print(f"No data in range for {filename}.")
         return
 
     fig, ax = plt.subplots(figsize=(8, 6))
 
-    diameters = sorted(set(r[0] for r in laminar))
+    diameters = sorted(set(r[0] for r in subset_all))
     colors = {diameters[0]: "tab:blue", diameters[1]: "tab:orange"} if len(diameters) == 2 \
         else {d: c for d, c in zip(diameters, plt.cm.tab10.colors)}
 
     for diameter in diameters:
-        subset = [r for r in laminar if r[0] == diameter]
+        subset = [r for r in subset_all if r[0] == diameter]
         re = [r[1] for r in subset]
         f = [r[3] for r in subset]
         color = colors[diameter]
         ax.plot(re, f, 'o', label=f'{diameter}" pipe (measured)', color=color, alpha=0.8)
 
-    re_min = min(r[1] for r in laminar)
-    re_max = max(r[1] for r in laminar)
+    re_min = min(r[1] for r in subset_all)
+    re_max = max(r[1] for r in subset_all)
     re_curve = [re_min * (re_max / re_min)**(i / 99) for i in range(100)]
-    f_curve = [16 / re for re in re_curve]
-    ax.plot(re_curve, f_curve, '--', color="black", label="f = 16/Re")
+    f_curve = [correlation(re) for re in re_curve]
+    ax.plot(re_curve, f_curve, '--', color="black", label=correlation_label)
 
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("Reynolds Number")
     ax.set_ylabel("Fanning Friction Factor")
-    ax.set_title("Laminar Friction Factor vs. f = 16/Re Correlation")
+    ax.set_title(title)
     ax.legend()
     ax.grid(True, which="both")
     fig.tight_layout()
@@ -217,4 +216,13 @@ for diameter, re, std_re, f, std_f in friction_results:
     print(f'{diameter}" pipe: Re={re:.0f}+/-{std_re:.0f}, f={f:.4f}+/-{std_f:.4f}')
 
 create_friction_plot(friction_results)
-create_laminar_comparison_plot(friction_results)
+
+create_regime_comparison_plot(
+    friction_results, lambda re: re < LAMINAR_RE, lambda re: 16 / re,
+    "f = 16/Re", "Laminar Friction Factor vs. f = 16/Re Correlation",
+    "laminar_friction_comparison.png")
+
+create_regime_comparison_plot(
+    friction_results, lambda re: re > TURBULENT_RE, lambda re: 0.079 * re**-0.25,
+    "f = 0.079 Re^-0.25 (Blasius)", "Turbulent Friction Factor vs. Blasius Correlation",
+    "turbulent_friction_comparison.png")
