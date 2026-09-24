@@ -74,6 +74,7 @@ def globe_valve_rows(groups):
     (J/kg) per group."""
     rows = []
     for note, readings in groups:
+        readings = [(flow, psid) for flow, psid in readings if psid > 0]
         flows = [flow for flow, _ in readings]
         pressures_pa = [psid * PSI_TO_PA for _, psid in readings]
         avg_flow = statistics.mean(flows)
@@ -86,6 +87,7 @@ def averages_with_error(groups):
     """Return diameter, avg_flow, std_flow, avg_delta_p (Pa), std_delta_p (Pa) per group."""
     rows = []
     for (diameter, note), readings in groups:
+        readings = [(flow, psid) for flow, psid in readings if psid > 0]
         flows = [flow for flow, _ in readings]
         pressures_pa = [psid * PSI_TO_PA for _, psid in readings]
         avg_flow = statistics.mean(flows)
