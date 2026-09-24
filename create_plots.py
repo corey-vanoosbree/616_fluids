@@ -85,6 +85,15 @@ def haaland_fanning(re, eps_over_d):
     f_darcy = (-1.8 * math.log10((eps_over_d / 3.7)**1.11 + 6.9 / re))**-2
     return f_darcy / 4
 
+def churchill_fanning(re, eps_over_d):
+    """Fanning friction factor from the Churchill correlation (valid across the
+    laminar, transitional, and turbulent regimes) for a given Reynolds number
+    and relative roughness (eps/D)."""
+    a = (2.457 * math.log(1 / ((7 / re)**0.9 + 0.27 * eps_over_d)))**16
+    b = (37530 / re)**16
+    f_darcy = 8 * ((8 / re)**12 + 1 / (a + b)**1.5)**(1 / 12)
+    return f_darcy / 4
+
 def friction_reynolds(rows):
     """Compute Reynolds number and friction factor, with error bars, for each averaged group."""
     results = []
@@ -252,3 +261,8 @@ create_regime_comparison_plot(
     friction_results, lambda re: re > TURBULENT_RE, lambda re: haaland_fanning(re, eps_over_d),
     "Haaland correlation", "Turbulent Friction Factor vs. Haaland Correlation",
     "turbulent_friction_haaland.png")
+
+create_regime_comparison_plot(
+    friction_results, lambda re: re > TURBULENT_RE, lambda re: churchill_fanning(re, eps_over_d),
+    "Churchill correlation", "Turbulent Friction Factor vs. Churchill Correlation",
+    "turbulent_friction_churchill.png")
