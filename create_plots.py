@@ -15,6 +15,7 @@ PIPE_SPECS = {
     0.41: {"diameter_in": 0.408, "length_in": 76},
     0.285: {"diameter_in": 0.282, "length_in": 70.5},
 }
+ROUGHNESS_IN = 4e-6  # pvc roughness, inches (4 microinches, from `pipes`)
 
 def parse_flow_pressure_groups(filename):
     """Group rows by logging note (one flow-rate setting) and return per-group
@@ -77,6 +78,12 @@ def friction_factor(diameter, flow_rate_lpm, delta_p):
     q = flow_rate_lpm / 60000  # LPM -> m^3/s
     v = q / area
     return delta_p * d / (length * 2 * rho * v**2)
+
+def haaland_fanning(re, eps_over_d):
+    """Fanning friction factor from the Haaland correlation for a given Reynolds
+    number and relative roughness (eps/D)."""
+    f_darcy = (-1.8 * math.log10((eps_over_d / 3.7)**1.11 + 6.9 / re))**-2
+    return f_darcy / 4
 
 def friction_reynolds(rows):
     """Compute Reynolds number and friction factor, with error bars, for each averaged group."""
@@ -189,6 +196,16 @@ def create_regime_comparison_plot(results, regime_filter, correlation, correlati
     f_curve = [correlation(re) for re in re_curve]
     ax.plot(re_curve, f_curve, '--', color="black", label=correlation_label)
 
+    measured_f = [r[3] for r in subset_all]
+    predicted_f = [correlation(r[1]) for r in subset_all]
+    mean_f = statistics.mean(measured_f)
+    ss_res = sum((mf - pf)**2 for mf, pf in zip(measured_f, predicted_f))
+    ss_tot = sum((mf - mean_f)**2 for mf in measured_f)
+    r_squared = 1 - ss_res / ss_tot if ss_tot else float("nan")
+    ax.text(0.03, 0.03, f"R² = {r_squared:.4f}", transform=ax.transAxes,
+            fontsize=10, va="bottom", ha="left",
+            bbox=dict(facecolor="white", edgecolor="gray", alpha=0.8))
+
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("Reynolds Number")
@@ -199,7 +216,7 @@ def create_regime_comparison_plot(results, regime_filter, correlation, correlati
     fig.tight_layout()
     fig.savefig(filename, dpi=200)
     plt.close(fig)
-    print(f"Saved plot to {filename}")
+    print(f"Saved plot to {filename} (R^2 = {r_squared:.4f})")
 
 slowflow_groups = parse_flow_pressure_groups("FLU-prelab-Slowflow")
 highflow_groups = parse_flow_pressure_groups("FLU_Prelab_Highflow")
@@ -226,3 +243,12 @@ create_regime_comparison_plot(
     friction_results, lambda re: re > TURBULENT_RE, lambda re: 0.079 * re**-0.25,
     "f = 0.079 Re^-0.25 (Blasius)", "Turbulent Friction Factor vs. Blasius Correlation",
     "turbulent_friction_comparison.png")
+
+# both pipes are hydraulically smooth (eps/D ~1e-5), so their Haaland curves are
+# visually identical; use the mean diameter for a single representative curve
+mean_d_in = statistics.mean(spec["diameter_in"] for spec in PIPE_SPECS.values())
+eps_over_d = ROUGHNESS_IN / mean_d_in
+create_regime_comparison_plot(
+    friction_results, lambda re: re > TURBULENT_RE, lambda re: haaland_fanning(re, eps_over_d),
+    "Haaland correlation", "Turbulent Friction Factor vs. Haaland Correlation",
+    "turbulent_friction_haaland.png")
