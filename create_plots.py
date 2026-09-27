@@ -129,8 +129,15 @@ def churchill_fanning(re, eps_over_d):
     and relative roughness (eps/D)."""
     a = (2.457 * math.log(1 / ((7 / re)**0.9 + 0.27 * eps_over_d)))**16
     b = (37530 / re)**16
-    f_darcy = 8 * ((8 / re)**12 + 1 / (a + b)**1.5)**(1 / 12)
-    return f_darcy / 4
+    return 2 * ((8 / re)**12 + (a + b)**-1.5)**(1 / 12)
+
+def romeo_royo_monzon_fanning(re, eps_over_d):
+    """Fanning friction factor from the Romeo, Royo & Monzon correlation for a
+    given Reynolds number and relative roughness (eps/D)."""
+    inner = math.log10((eps_over_d / 7.7918)**0.9924 + (5.3326 / re)**0.9345)
+    mid = math.log10((eps_over_d / 3.827) - (4.567 / re) * inner)
+    outer = math.log10((eps_over_d / 3.7065) - (5.0272 / re) * mid)
+    return (-4 * outer)**-2
 
 def friction_reynolds(rows):
     """Compute Reynolds number and friction factor, with error bars, for each averaged group."""
@@ -315,9 +322,14 @@ create_regime_comparison_plot(
     "turbulent_friction_haaland.png")
 
 create_regime_comparison_plot(
-    friction_results, lambda re: re > TURBULENT_RE, lambda re: churchill_fanning(re, eps_over_d),
-    "Churchill correlation", "Turbulent Friction Factor vs. Churchill Correlation",
-    "turbulent_friction_churchill.png")
+    friction_results, lambda re: True, lambda re: churchill_fanning(re, eps_over_d),
+    "Churchill correlation", "Friction Factor vs. Churchill Correlation (All Flow Regimes)",
+    "churchill_friction_comparison.png")
+
+create_regime_comparison_plot(
+    friction_results, lambda re: re > TURBULENT_RE, lambda re: romeo_royo_monzon_fanning(re, eps_over_d),
+    "Romeo, Royo & Monzon correlation", "Turbulent Friction Factor vs. Romeo, Royo & Monzon Correlation",
+    "turbulent_friction_romeo_royo_monzon.png")
 
 globe_groups = parse_globe_valve_groups("FLU_Prelab_Highflow")
 globe_rows = globe_valve_rows(globe_groups)
