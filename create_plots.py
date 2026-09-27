@@ -100,9 +100,9 @@ def globe_valve_rows(groups, rho):
         rows.append((avg_flow, avg_dp, friction_loss))
     return sorted(rows)
 
-def averages_with_error(groups):
-    """Return diameter, avg_flow, std_flow, avg_delta_p (Pa), std_delta_p (Pa), temp (C)
-    per group. Temp is parsed from the logging note."""
+def averages(groups):
+    """Return diameter, avg_flow, avg_delta_p (Pa), temp (C) per group.
+    Temp is parsed from the logging note."""
     rows = []
     for (diameter, note), readings in groups:
         readings = [(flow, psid) for flow, psid in readings if psid > 0]
@@ -110,10 +110,8 @@ def averages_with_error(groups):
         pressures_pa = [psid * PSI_TO_PA for _, psid in readings]
         avg_flow = statistics.mean(flows)
         avg_dp = statistics.mean(pressures_pa)
-        std_flow = statistics.pstdev(flows)
-        std_dp = statistics.pstdev(pressures_pa)
         temp = float(TEMP_PATTERN.search(note).group(1))
-        rows.append((diameter, avg_flow, std_flow, avg_dp, std_dp, temp))
+        rows.append((diameter, avg_flow, avg_dp, temp))
     return sorted(rows)
 
 def reynolds_number(diameter, flow_rate_lpm, rho, mu):
@@ -159,21 +157,15 @@ def romeo_royo_monzon_fanning(re, eps_over_d):
     return (-4 * outer)**-2
 
 def friction_reynolds(rows, rho):
-    """Compute Reynolds number and friction factor, with error bars, for each averaged group.
+    """Compute Reynolds number and friction factor for each averaged group.
     `rho` (kg/m^3) is the fixed density used for the whole dataset; viscosity is
     recalculated per point from the Kestin correlation using that point's own temperature."""
     results = []
-    for diameter, avg_flow, std_flow, avg_dp, std_dp, temp in rows:
+    for diameter, avg_flow, avg_dp, temp in rows:
         mu = viscosity_kestin(temp)
         re = reynolds_number(diameter, avg_flow, rho, mu)
         f = friction_factor(diameter, avg_flow, avg_dp, rho)
-
-        rel_flow = std_flow / avg_flow if avg_flow else 0
-        rel_dp = std_dp / avg_dp if avg_dp else 0
-        std_re = re * rel_flow
-        std_f = f * math.sqrt(rel_dp**2 + (2 * rel_flow)**2)
-
-        results.append((diameter, re, std_re, f, std_f))
+        results.append((diameter, re, f))
     return results
 
 def create_plot(rows, filename="flow_vs_pressure.png"):
@@ -185,7 +177,7 @@ def create_plot(rows, filename="flow_vs_pressure.png"):
     for diameter in diameters:
         subset = [r for r in rows if r[0] == diameter]
         avg_flow = [r[1] for r in subset]
-        avg_dp = [r[3] for r in subset]
+        avg_dp = [r[2] for r in subset]
         ax.plot(avg_flow, avg_dp, markers[diameter], label=f'{diameter}" pipe',
                 color="black", markerfacecolor="black")
 
@@ -235,7 +227,7 @@ def create_friction_plot(results, filename="friction_factor_vs_reynolds.png"):
     for diameter in diameters:
         subset = [r for r in results if r[0] == diameter]
         re = [r[1] for r in subset]
-        f = [r[3] for r in subset]
+        f = [r[2] for r in subset]
         ax.plot(re, f, markers[diameter], label=f'{diameter}" pipe',
                 color="black", markerfacecolor="black")
 
@@ -273,7 +265,7 @@ def create_regime_comparison_plot(results, regime_filter, correlation, correlati
     for diameter in diameters:
         subset = [r for r in subset_all if r[0] == diameter]
         re = [r[1] for r in subset]
-        f = [r[3] for r in subset]
+        f = [r[2] for r in subset]
         ax.plot(re, f, markers[diameter], label=f'{diameter}" pipe (measured)',
                 color="black", markerfacecolor="black")
 
@@ -283,7 +275,7 @@ def create_regime_comparison_plot(results, regime_filter, correlation, correlati
     f_curve = [correlation(re) for re in re_curve]
     ax.plot(re_curve, f_curve, '--', color="black", label=correlation_label)
 
-    measured_f = [r[3] for r in subset_all]
+    measured_f = [r[2] for r in subset_all]
     predicted_f = [correlation(r[1]) for r in subset_all]
     mean_f = statistics.mean(measured_f)
     ss_res = sum((mf - pf)**2 for mf, pf in zip(measured_f, predicted_f))
@@ -308,23 +300,23 @@ def create_regime_comparison_plot(results, regime_filter, correlation, correlati
 slowflow_groups = parse_flow_pressure_groups("FLU-prelab-Slowflow")
 highflow_groups = parse_flow_pressure_groups("FLU_Prelab_Highflow")
 
-rows = averages_with_error(slowflow_groups + highflow_groups)
+rows = averages(slowflow_groups + highflow_groups)
 
-for diameter, avg_flow, std_flow, avg_dp, std_dp, temp in rows:
-    print(f'{diameter}" pipe: Q={avg_flow:.2f}+/-{std_flow:.2f} LPM, dP={avg_dp:.1f}+/-{std_dp:.1f} Pa, T={temp:.2f} C')
+for diameter, avg_flow, avg_dp, temp in rows:
+    print(f'{diameter}" pipe: Q={avg_flow:.2f} LPM, dP={avg_dp:.1f} Pa, T={temp:.2f} C')
 
 create_plot(rows)
 
 # density from the Kell correlation at the average temperature across all runs;
 # viscosity is recalculated per point (in friction_reynolds) from the Kestin
 # correlation using that point's own temperature
-avg_temp = statistics.mean(r[5] for r in rows)
+avg_temp = statistics.mean(r[3] for r in rows)
 rho = density_kell(avg_temp)
 print(f"Average temp across all runs: {avg_temp:.2f} C -> rho (Kell) = {rho:.3f} kg/m^3")
 
 friction_results = friction_reynolds(rows, rho)
-for diameter, re, std_re, f, std_f in friction_results:
-    print(f'{diameter}" pipe: Re={re:.0f}+/-{std_re:.0f}, f={f:.4f}+/-{std_f:.4f}')
+for diameter, re, f in friction_results:
+    print(f'{diameter}" pipe: Re={re:.0f}, f={f:.4f}')
 
 create_friction_plot(friction_results)
 
