@@ -2,13 +2,15 @@ import re
 import statistics
 import math
 import matplotlib.pyplot as plt
+import plot_style  # noqa: F401 (sets sans-serif font rcParams on import)
+
+MARKERS = ["o", "^"]  # distinct marker per pipe diameter, black-and-white friendly
 
 PSI_TO_PA = 6894.757293168
 DIAMETER_PATTERN = re.compile(r'(\d+\.\d+)\s*(?:"|inches)')
+TEMP_PATTERN = re.compile(r'LPM[^\d]*(\d+\.?\d*)')
 
 pipes = [("pvc", 0.408, 76, 4), ("pvc", 0.282, 70.5, 4), ("pvc", 0.47, 66, 4), ("steel", 0.31, 79.5, 8), ("copper", 0.312, 72.5, 8)]
-rho = 997 #kg/m^3
-mu = 9.25 * 10**-4 #Pa.s, average of measured values at 20-25C
 
 # nominal diameter as labeled in the logging notes -> measured pipe diameter/length from `pipes`
 PIPE_SPECS = {
@@ -16,6 +18,21 @@ PIPE_SPECS = {
     0.285: {"diameter_in": 0.282, "length_in": 70.5},
 }
 ROUGHNESS_IN = 4e-6  # pvc roughness, inches (4 microinches, from `pipes`)
+
+def density_kell(t):
+    """Kell (1975) equation for the density of water at 1 atm. t in C, returns kg/m^3."""
+    numerator = (999.83952 + 16.945176 * t - 7.9870401e-3 * t**2
+                 - 46.170461e-6 * t**3 + 105.56302e-9 * t**4 - 280.54253e-12 * t**5)
+    denominator = 1 + 16.879850e-3 * t
+    return numerator / denominator
+
+def viscosity_kestin(t):
+    """Kestin, Sokolov & Wakeham (1978) equation for the viscosity of water at 1 atm.
+    t in C, returns dynamic viscosity in Pa.s."""
+    mu20 = 1.002e-3  # Pa.s at 20C
+    dt = 20 - t
+    log_ratio = (dt * (1.2364 - 1.37e-3 * dt + 5.7e-6 * dt**2)) / (t + 96)
+    return mu20 * 10**log_ratio
 
 def parse_flow_pressure_groups(filename):
     """Group rows by logging note (one flow-rate setting) and return per-group
@@ -69,9 +86,9 @@ def parse_globe_valve_groups(filename):
 
     return list(groups.items())
 
-def globe_valve_rows(groups):
+def globe_valve_rows(groups, rho):
     """Return avg_flow (LPM), avg_delta_p (Pa), and friction loss as specific energy
-    (J/kg) per group."""
+    (J/kg) per group. `rho` (kg/m^3) is the fixed density used for the whole dataset."""
     rows = []
     for note, readings in groups:
         readings = [(flow, psid) for flow, psid in readings if psid > 0]
@@ -84,7 +101,8 @@ def globe_valve_rows(groups):
     return sorted(rows)
 
 def averages_with_error(groups):
-    """Return diameter, avg_flow, std_flow, avg_delta_p (Pa), std_delta_p (Pa) per group."""
+    """Return diameter, avg_flow, std_flow, avg_delta_p (Pa), std_delta_p (Pa), temp (C)
+    per group. Temp is parsed from the logging note."""
     rows = []
     for (diameter, note), readings in groups:
         readings = [(flow, psid) for flow, psid in readings if psid > 0]
@@ -94,10 +112,11 @@ def averages_with_error(groups):
         avg_dp = statistics.mean(pressures_pa)
         std_flow = statistics.pstdev(flows)
         std_dp = statistics.pstdev(pressures_pa)
-        rows.append((diameter, avg_flow, std_flow, avg_dp, std_dp))
+        temp = float(TEMP_PATTERN.search(note).group(1))
+        rows.append((diameter, avg_flow, std_flow, avg_dp, std_dp, temp))
     return sorted(rows)
 
-def reynolds_number(diameter, flow_rate_lpm):
+def reynolds_number(diameter, flow_rate_lpm, rho, mu):
     """Reynolds number for a pipe (nominal diameter in inches) at a given flow rate (LPM)."""
     spec = PIPE_SPECS[diameter]
     d = spec["diameter_in"] * 0.0254
@@ -106,7 +125,7 @@ def reynolds_number(diameter, flow_rate_lpm):
     v = q / area
     return rho * v * d / mu
 
-def friction_factor(diameter, flow_rate_lpm, delta_p):
+def friction_factor(diameter, flow_rate_lpm, delta_p, rho):
     """Fanning friction factor for a pipe (nominal diameter in inches), flow rate (LPM),
     and pressure drop (Pa)."""
     spec = PIPE_SPECS[diameter]
@@ -139,12 +158,15 @@ def romeo_royo_monzon_fanning(re, eps_over_d):
     outer = math.log10((eps_over_d / 3.7065) - (5.0272 / re) * mid)
     return (-4 * outer)**-2
 
-def friction_reynolds(rows):
-    """Compute Reynolds number and friction factor, with error bars, for each averaged group."""
+def friction_reynolds(rows, rho):
+    """Compute Reynolds number and friction factor, with error bars, for each averaged group.
+    `rho` (kg/m^3) is the fixed density used for the whole dataset; viscosity is
+    recalculated per point from the Kestin correlation using that point's own temperature."""
     results = []
-    for diameter, avg_flow, std_flow, avg_dp, std_dp in rows:
-        re = reynolds_number(diameter, avg_flow)
-        f = friction_factor(diameter, avg_flow, avg_dp)
+    for diameter, avg_flow, std_flow, avg_dp, std_dp, temp in rows:
+        mu = viscosity_kestin(temp)
+        re = reynolds_number(diameter, avg_flow, rho, mu)
+        f = friction_factor(diameter, avg_flow, avg_dp, rho)
 
         rel_flow = std_flow / avg_flow if avg_flow else 0
         rel_dp = std_dp / avg_dp if avg_dp else 0
@@ -158,15 +180,14 @@ def create_plot(rows, filename="flow_vs_pressure.png"):
     fig, ax = plt.subplots(figsize=(8, 6))
 
     diameters = sorted(set(r[0] for r in rows))
-    colors = {diameters[0]: "tab:blue", diameters[1]: "tab:orange"} if len(diameters) == 2 \
-        else {d: c for d, c in zip(diameters, plt.cm.tab10.colors)}
+    markers = {d: m for d, m in zip(diameters, MARKERS)}
 
     for diameter in diameters:
         subset = [r for r in rows if r[0] == diameter]
         avg_flow = [r[1] for r in subset]
         avg_dp = [r[3] for r in subset]
-        color = colors[diameter]
-        ax.plot(avg_flow, avg_dp, 'o', label=f'{diameter}" pipe', color=color, alpha=0.8)
+        ax.plot(avg_flow, avg_dp, markers[diameter], label=f'{diameter}" pipe',
+                color="black", markerfacecolor="black")
 
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -174,7 +195,7 @@ def create_plot(rows, filename="flow_vs_pressure.png"):
     ax.set_ylabel("Pressure Drop (Pa)")
     ax.set_title("Pressure Drop vs. Flow Rate by Pipe Diameter")
     ax.legend()
-    ax.grid(True, which="both")
+    ax.grid(True, which="both", color="gray", linewidth=0.5, alpha=0.5)
     fig.tight_layout()
     fig.savefig(filename, dpi=200)
     plt.close(fig)
@@ -182,13 +203,13 @@ def create_plot(rows, filename="flow_vs_pressure.png"):
 
 def create_globe_valve_plot(x, y, xlabel, ylabel, title, filename):
     fig, ax = plt.subplots(figsize=(8, 6))
-    ax.plot(x, y, 'o', color="tab:purple", alpha=0.8)
+    ax.plot(x, y, 'o', color="black", markerfacecolor="black")
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
-    ax.grid(True, which="both")
+    ax.grid(True, which="both", color="gray", linewidth=0.5, alpha=0.5)
     fig.tight_layout()
     fig.savefig(filename, dpi=200)
     plt.close(fig)
@@ -201,23 +222,22 @@ def create_friction_plot(results, filename="friction_factor_vs_reynolds.png"):
     fig, ax = plt.subplots(figsize=(8, 6))
 
     diameters = sorted(set(r[0] for r in results))
-    colors = {diameters[0]: "tab:blue", diameters[1]: "tab:orange"} if len(diameters) == 2 \
-        else {d: c for d, c in zip(diameters, plt.cm.tab10.colors)}
+    markers = {d: m for d, m in zip(diameters, MARKERS)}
 
     re_min = min(r[1] for r in results)
     re_max = max(r[1] for r in results)
-    ax.axvspan(re_min, LAMINAR_RE, color="tab:green", alpha=0.08)
-    ax.axvspan(LAMINAR_RE, TURBULENT_RE, color="tab:gray", alpha=0.12)
-    ax.axvspan(TURBULENT_RE, re_max, color="tab:red", alpha=0.06)
-    ax.axvline(LAMINAR_RE, color="gray", linestyle="--", linewidth=1)
-    ax.axvline(TURBULENT_RE, color="gray", linestyle="--", linewidth=1)
+    ax.axvspan(re_min, LAMINAR_RE, color="black", alpha=0.06)
+    ax.axvspan(LAMINAR_RE, TURBULENT_RE, color="black", alpha=0.16)
+    ax.axvspan(TURBULENT_RE, re_max, color="black", alpha=0.0)
+    ax.axvline(LAMINAR_RE, color="black", linestyle="--", linewidth=1)
+    ax.axvline(TURBULENT_RE, color="black", linestyle="--", linewidth=1)
 
     for diameter in diameters:
         subset = [r for r in results if r[0] == diameter]
         re = [r[1] for r in subset]
         f = [r[3] for r in subset]
-        color = colors[diameter]
-        ax.plot(re, f, 'o', label=f'{diameter}" pipe', color=color, alpha=0.8)
+        ax.plot(re, f, markers[diameter], label=f'{diameter}" pipe',
+                color="black", markerfacecolor="black")
 
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -229,10 +249,10 @@ def create_friction_plot(results, filename="friction_factor_vs_reynolds.png"):
                       ("Transitional", (LAMINAR_RE * TURBULENT_RE)**0.5),
                       ("Turbulent", (TURBULENT_RE * re_max)**0.5)]:
         ax.text(x, 0.97, label, transform=ax.get_xaxis_transform(),
-                ha="center", va="top", fontsize=9, color="dimgray")
+                ha="center", va="top", fontsize=9, color="black")
 
     ax.legend(loc="lower left")
-    ax.grid(True, which="both")
+    ax.grid(True, which="both", color="gray", linewidth=0.5, alpha=0.5)
     fig.tight_layout()
     fig.savefig(filename, dpi=200)
     plt.close(fig)
@@ -248,15 +268,14 @@ def create_regime_comparison_plot(results, regime_filter, correlation, correlati
     fig, ax = plt.subplots(figsize=(8, 6))
 
     diameters = sorted(set(r[0] for r in subset_all))
-    colors = {diameters[0]: "tab:blue", diameters[1]: "tab:orange"} if len(diameters) == 2 \
-        else {d: c for d, c in zip(diameters, plt.cm.tab10.colors)}
+    markers = {d: m for d, m in zip(diameters, MARKERS)}
 
     for diameter in diameters:
         subset = [r for r in subset_all if r[0] == diameter]
         re = [r[1] for r in subset]
         f = [r[3] for r in subset]
-        color = colors[diameter]
-        ax.plot(re, f, 'o', label=f'{diameter}" pipe (measured)', color=color, alpha=0.8)
+        ax.plot(re, f, markers[diameter], label=f'{diameter}" pipe (measured)',
+                color="black", markerfacecolor="black")
 
     re_min = min(r[1] for r in subset_all)
     re_max = max(r[1] for r in subset_all)
@@ -280,7 +299,7 @@ def create_regime_comparison_plot(results, regime_filter, correlation, correlati
     ax.set_ylabel("Fanning Friction Factor")
     ax.set_title(title)
     ax.legend()
-    ax.grid(True, which="both")
+    ax.grid(True, which="both", color="gray", linewidth=0.5, alpha=0.5)
     fig.tight_layout()
     fig.savefig(filename, dpi=200)
     plt.close(fig)
@@ -291,12 +310,19 @@ highflow_groups = parse_flow_pressure_groups("FLU_Prelab_Highflow")
 
 rows = averages_with_error(slowflow_groups + highflow_groups)
 
-for diameter, avg_flow, std_flow, avg_dp, std_dp in rows:
-    print(f'{diameter}" pipe: Q={avg_flow:.2f}+/-{std_flow:.2f} LPM, dP={avg_dp:.1f}+/-{std_dp:.1f} Pa')
+for diameter, avg_flow, std_flow, avg_dp, std_dp, temp in rows:
+    print(f'{diameter}" pipe: Q={avg_flow:.2f}+/-{std_flow:.2f} LPM, dP={avg_dp:.1f}+/-{std_dp:.1f} Pa, T={temp:.2f} C')
 
 create_plot(rows)
 
-friction_results = friction_reynolds(rows)
+# density from the Kell correlation at the average temperature across all runs;
+# viscosity is recalculated per point (in friction_reynolds) from the Kestin
+# correlation using that point's own temperature
+avg_temp = statistics.mean(r[5] for r in rows)
+rho = density_kell(avg_temp)
+print(f"Average temp across all runs: {avg_temp:.2f} C -> rho (Kell) = {rho:.3f} kg/m^3")
+
+friction_results = friction_reynolds(rows, rho)
 for diameter, re, std_re, f, std_f in friction_results:
     print(f'{diameter}" pipe: Re={re:.0f}+/-{std_re:.0f}, f={f:.4f}+/-{std_f:.4f}')
 
@@ -332,7 +358,7 @@ create_regime_comparison_plot(
     "turbulent_friction_romeo_royo_monzon.png")
 
 globe_groups = parse_globe_valve_groups("FLU_Prelab_Highflow")
-globe_rows = globe_valve_rows(globe_groups)
+globe_rows = globe_valve_rows(globe_groups, rho)
 
 for avg_flow, avg_dp, friction_loss in globe_rows:
     print(f'Globe valve: Q={avg_flow:.2f} LPM, dP={avg_dp:.1f} Pa, friction loss={friction_loss:.2f} J/kg')

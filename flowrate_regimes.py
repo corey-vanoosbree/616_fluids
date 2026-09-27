@@ -1,5 +1,6 @@
 import math
 import matplotlib.pyplot as plt
+from plot_style import style_table
 
 mu = 1.002 * 10**-3 #Pa.s
 rho = 997 #kg/m^3
@@ -22,23 +23,15 @@ def save_table_png(rows, filename="flowrate_regimes.png"):
     cell_text = [[material, f"{diameter:.3f}", f"{Q_turb:.2f}", f"{Q_lam:.2f}"]
                  for material, diameter, Q_turb, Q_lam in rows]
 
-    fig, ax = plt.subplots(figsize=(8, 0.5 + 0.4 * len(rows)))
+    fig, ax = plt.subplots(figsize=(8, 0.6 + 0.35 * len(rows)))
     ax.axis("off")
 
-    table = ax.table(cellText=cell_text, colLabels=col_labels, loc="center", cellLoc="center")
+    table = ax.table(cellText=cell_text, colLabels=col_labels, cellLoc="left", bbox=[0, 0, 1, 1])
     table.auto_set_font_size(False)
     table.set_fontsize(11)
-    table.scale(1, 1.8)
     table.auto_set_column_width(col=list(range(len(col_labels))))
 
-    for (row, _), cell in table.get_celld().items():
-        if row == 0:
-            cell.set_facecolor("#40466e")
-            cell.set_text_props(color="white", weight="bold")
-        else:
-            cell.set_facecolor("#f2f2f2" if row % 2 == 0 else "white")
-
-    ax.set_title("Flow Regime Transition Rates", fontsize=14, fontweight="bold", pad=12)
+    style_table(ax, table, "Flow Regime Transition Rates")
     fig.tight_layout()
     fig.savefig(filename, dpi=200, bbox_inches="tight")
     plt.close(fig)

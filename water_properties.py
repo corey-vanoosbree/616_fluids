@@ -1,5 +1,6 @@
 import re
 import matplotlib.pyplot as plt
+from plot_style import style_table
 
 NOTE_PATTERN = re.compile(r'([\d.]+)\s*LPM\s*\(?\s*(\d+\.?\d*)\.?\s*C?\)?')
 
@@ -59,19 +60,12 @@ def save_density_table(rows, filename="water_density_kell.png"):
     fig, ax = plt.subplots(figsize=(8, 0.6 + 0.28 * len(rows)))
     ax.axis("off")
 
-    table = ax.table(cellText=cell_text, colLabels=col_labels, cellLoc="center", bbox=[0, 0, 1, 1])
+    table = ax.table(cellText=cell_text, colLabels=col_labels, cellLoc="left", bbox=[0, 0, 1, 1])
     table.auto_set_font_size(False)
     table.set_fontsize(9)
     table.auto_set_column_width(col=list(range(len(col_labels))))
 
-    for (row, _), cell in table.get_celld().items():
-        if row == 0:
-            cell.set_facecolor("#40466e")
-            cell.set_text_props(color="white", weight="bold")
-        else:
-            cell.set_facecolor("#f2f2f2" if row % 2 == 0 else "white")
-
-    ax.set_title("Water Density (Kell Equation)", fontsize=14, fontweight="bold", pad=12)
+    style_table(ax, table, "Water Density (Kell Equation)")
     fig.tight_layout()
     fig.savefig(filename, dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -85,19 +79,12 @@ def save_viscosity_table(rows, filename="water_viscosity_kestin.png"):
     fig, ax = plt.subplots(figsize=(8, 0.6 + 0.28 * len(rows)))
     ax.axis("off")
 
-    table = ax.table(cellText=cell_text, colLabels=col_labels, cellLoc="center", bbox=[0, 0, 1, 1])
+    table = ax.table(cellText=cell_text, colLabels=col_labels, cellLoc="left", bbox=[0, 0, 1, 1])
     table.auto_set_font_size(False)
     table.set_fontsize(9)
     table.auto_set_column_width(col=list(range(len(col_labels))))
 
-    for (row, _), cell in table.get_celld().items():
-        if row == 0:
-            cell.set_facecolor("#40466e")
-            cell.set_text_props(color="white", weight="bold")
-        else:
-            cell.set_facecolor("#f2f2f2" if row % 2 == 0 else "white")
-
-    ax.set_title("Water Viscosity (Kestin Equation)", fontsize=14, fontweight="bold", pad=12)
+    style_table(ax, table, "Water Viscosity (Kestin Equation)")
     fig.tight_layout()
     fig.savefig(filename, dpi=200, bbox_inches="tight")
     plt.close(fig)
