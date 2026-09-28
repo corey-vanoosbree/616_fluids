@@ -1,9 +1,21 @@
 import math
+import statistics
 import matplotlib.pyplot as plt
 from plot_style import style_table
+from create_plots import (
+    parse_flow_pressure_groups, averages, density_kell, viscosity_kestin,
+)
 
-mu = 1.002 * 10**-3 #Pa.s
-rho = 997 #kg/m^3
+# average density and viscosity from the collected flow/pressure data, evaluated
+# at the average temperature across all runs (same approach as create_plots.py)
+_data_rows = averages(
+    parse_flow_pressure_groups("FLU-prelab-Slowflow")
+    + parse_flow_pressure_groups("FLU_Prelab_Highflow"))
+_avg_temp = statistics.mean(r[3] for r in _data_rows)
+rho = density_kell(_avg_temp) #kg/m^3
+mu = viscosity_kestin(_avg_temp) #Pa.s
+print(f"Average temp across all runs: {_avg_temp:.2f} C -> rho = {rho:.3f} kg/m^3, mu = {mu:.6e} Pa.s")
+
 pipes = [("pvc", 0.408), ("pvc", 0.282), ("pvc", 0.47), ("steel", 0.31), ("copper", 0.312)] #diameter in inches
 turbulent = 4000
 laminar = 2300
