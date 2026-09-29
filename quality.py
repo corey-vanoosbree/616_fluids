@@ -19,7 +19,6 @@ PSI = cp.PSI_TO_PA          # Pa per psi
 LPM = 1 / 60000             # m^3/s per L/min
 INCH = 0.0254               # m per inch
 
-# ---------------------------------------------------------------------------- instruments (datasheets)
 # Side A = low-flow side: FTB2001 turbine meter and PX409 0-1 psid transducer.
 # Side B = high-flow side: FV102 vortex meter and PX409 0-15 psid transducer.
 DP_FS = {"A": 1.0, "B": 15.0}                          # transducer full scale, psid
@@ -38,7 +37,6 @@ EPS = {"pvc": 4e-6 * INCH, "steel": 8e-6 * INCH, "copper": 8e-6 * INCH}   # grou
 K_REFS = {"Perry's ½ open": 8.5, "Welty, wide open": 7.5, "NIBCO Cv, full open": 894 * 0.785**4 / 6.65**2}
 DARBY = (1500.0, 1.70, 3.6)                          # Darby 3-K constants, globe valve, full open
 
-# ---------------------------------------------------------------------------- planned runs (deck of Sep 29, slides 19-20)
 PLAN_PIPES = {"PVC 0.470 in": ("pvc", 0.470, 66.0), "Steel 0.310 in": ("steel", 0.310, 79.5),
               "Copper 0.312 in": ("copper", 0.312, 72.5)}
 PLAN_RUNS = {("PVC 0.470 in", "A"): [0.6, 0.9, 1.2, 1.4, 1.8, 2.0, 2.4, 3.6, 4.8],
@@ -55,7 +53,6 @@ LABEL = {0.41: "0.408 in", 0.285: "0.282 in"}
 CORRS = ["Blasius", "Churchill", "Colebrook", "Haaland", "Romeo"]
 
 
-# ============================================================================ math helpers
 def kc(n):
     """Coverage factor for 95% confidence, same as Excel's T.INV.2T(0.05, n - 1)."""
     return stats.t.ppf(0.975, n - 1)
@@ -102,11 +99,10 @@ def fit_power(x, y):
     return n, math.exp(b), stats.t.ppf(0.975, len(lx) - 2) * se, resid
 
 
-# ============================================================================ reading and cleaning the logs
 def read_points(fname, side):
     """One point = the consecutive log lines that share a logging note."""
     pts = []
-    for line in open(fname, encoding="utf-8").read().splitlines()[4:]:    # skip the 4 header lines
+    for line in open(fname, encoding="utf-8").read().splitlines()[4:]:
         t, q, p, note = [x.strip() for x in line.split("\t")]
         if not pts or note != pts[-1]["note"]:
             t_txt = cp.TEMP_PATTERN.search(note).group(1)
@@ -141,7 +137,6 @@ def fix_temperatures(pts):
         p["U_T"] = math.hypot(U_T_SPEC, p["UA_T"])
 
 
-# ============================================================================ one point: direct U, properties, propagation
 def analyze(p):
     side = p["side"]
     Q, P = np.array(p["Q"]), np.array(p["P"])
@@ -210,7 +205,6 @@ def closest(rows, side, pipe, q):
     return min((r for r in rows if r["side"] == side and r["pipe"] == pipe and r["valid"]), key=lambda r: abs(r["Q"] - q))
 
 
-# ============================================================================ planned runs
 def expected(pipe, side, q, noise, k_valve=None):
     """Expected dP and U_f/f (U_K/K for the valve) at a planned flow, at 23 C with the tour's noise levels."""
     rho, mu = cp.density_kell(PLAN_T), cp.viscosity_kestin(PLAN_T)
@@ -261,7 +255,6 @@ def plan_check(noise):
     return out
 
 
-# ============================================================================ written outputs
 def instrument_table(valid):
     """Slide 1: U_B, U_A, U_c and fractional U for every direct measurement (medians over the tour points)."""
     out = []
@@ -336,7 +329,6 @@ def write_csv(path, rows, keys):
         w.writerows(rows)
 
 
-# ============================================================================ slide figures (course style, slide size)
 def slide_style():
     plt.rcParams.update({
         "font.family": "sans-serif", "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
@@ -536,7 +528,6 @@ def fig_valve(valves):
     save(fig, "s_valve.png")
 
 
-# ============================================================================ main: the numbers behind each slide
 def main():
     OUT.mkdir(exist_ok=True)
     pts = read_points("FLU-prelab-Slowflow", "A") + read_points("FLU_Prelab_Highflow", "B")
@@ -685,7 +676,6 @@ def main():
         print(f"  mean K {km:.2f} vs {lab} {ref:.2f}: {100 * (km / ref - 1):+.1f}%, inside U_K at {inside}/{len(V)} points")
     fig_valve(V)
 
-    # ---- tables (the figures were saved above, one per slide)
     point_keys = list(dict.fromkeys(k for r in rows for k in r))    # every field, in the order computed
     write_csv(OUT / "quality_point_table.csv", rows, point_keys)
     write_csv(OUT / "quality_instrument_table.csv", inst, list(inst[0]))
