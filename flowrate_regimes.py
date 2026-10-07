@@ -11,7 +11,7 @@ from create_plots import (
 _data_rows = averages(
     parse_flow_pressure_groups("FLU-prelab-Slowflow")
     + parse_flow_pressure_groups("FLU_Prelab_Highflow"))
-_avg_temp = statistics.mean(r[3] for r in _data_rows)
+_avg_temp = statistics.mean(r[4] for r in _data_rows)
 rho = density_kell(_avg_temp) #kg/m^3
 mu = viscosity_kestin(_avg_temp) #Pa.s
 print(f"Average temp across all runs: {_avg_temp:.2f} C -> rho = {rho:.3f} kg/m^3, mu = {mu:.6e} Pa.s")

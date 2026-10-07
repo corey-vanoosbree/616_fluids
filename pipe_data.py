@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 from plot_style import style_table
 
-pipes = [("pvc", 0.408, 76, 4), ("pvc", 0.282, 70.5, 4), ("pvc", 0.47, 66, 4), ("steel", 0.31, 79.5, 8), ("copper", 0.312, 72.5, 8)]
+pipes = [("pvc", 0.408, 76, 4), ("pvc", 0.282, 70.5, 4), ("pvc", 0.47, 66, 4), ("steel", 0.307, 79.5, 8), ("copper", 0.31, 72.5, 6)]
 #material, diameter in inches, length in inches, roughness in microinches
 
-def save_table_png(rows, filename="pipe_data.png"):
+def save_table_png(rows, filename="Table_1.png"):
     col_labels = ["Material", "Diameter (in)", "Length (in)", "Roughness (microin)"]
     cell_text = [[material, f"{diameter:.3f}", f"{length:.2f}", f"{roughness:.0f}"]
                  for material, diameter, length, roughness in rows]
@@ -23,4 +23,5 @@ def save_table_png(rows, filename="pipe_data.png"):
     plt.close(fig)
     print(f"Saved table to {filename}")
 
-save_table_png(pipes)
+if __name__ == "__main__":
+    save_table_png(pipes)
