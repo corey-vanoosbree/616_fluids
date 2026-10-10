@@ -165,6 +165,33 @@ def valve_resistance_rows(groups, rho):
 
 ALL_VALVE_OPENINGS = ["1/4 open", "1/2 open", "3/4 open", "fully open"]  # openings shown in Figures 11-12
 ALL_VALVE_OPENING_MARKERS = {opening: m for opening, m in zip(ALL_VALVE_OPENINGS, MARKERS)}
+# restricted (trim) diameter as a fraction of the connecting pipe diameter, per opening
+OPENING_FRACTIONS = {"1/4 open": 0.25, "1/2 open": 0.5, "3/4 open": 0.75, "fully open": 1.0}
+
+def crane_fully_turbulent_friction_factor(roughness_in, diameter_in):
+    """Crane TP-410 fully-turbulent (Darcy) friction factor from relative roughness."""
+    eps_over_d = roughness_in / diameter_in
+    return 0.25 / (math.log10(eps_over_d / 3.7))**2
+
+def crane_valve_k(k_fully_open, beta):
+    """Crane TP-410 resistance coefficient for a valve whose trim diameter is
+    smaller than the connecting pipe, given beta = sqrt(restricted area / pipe
+    area). Reduces to k_fully_open when beta = 1."""
+    return (k_fully_open + beta * (0.5 * (1 - beta**2) + (1 - beta**2)**2)) / beta**4
+
+def literature_valve_k(roughness_in, diameter_in):
+    """Crane TP-410 literature K per valve opening: K = 340 * f_t for the fully
+    open valve, with reduced openings modeled as a valve-in-reducer (restricted
+    diameter = opening fraction * the connecting pipe diameter)."""
+    f_t = crane_fully_turbulent_friction_factor(roughness_in, diameter_in)
+    k_fully_open = 340 * f_t
+    k_by_opening = {}
+    for opening, frac in OPENING_FRACTIONS.items():
+        restricted_area = math.pi / 4 * (frac * diameter_in)**2
+        pipe_area = math.pi / 4 * diameter_in**2
+        beta = math.sqrt(restricted_area / pipe_area)
+        k_by_opening[opening] = crane_valve_k(k_fully_open, beta)
+    return f_t, k_by_opening
 
 def valve_resistance_rows_by_opening(groups, rho):
     """Return valve opening label, Reynolds number, and resistance coefficient K per
@@ -369,8 +396,10 @@ def create_valve_flow_pressure_plot(rows, title, filename):
     plt.close(fig)
     print(f"Saved plot to {filename}")
 
-def create_valve_resistance_by_opening_plot(rows, title, filename):
-    """Plot resistance coefficient K vs. Reynolds number, grouped by valve opening."""
+def create_valve_resistance_by_opening_plot(rows, literature, title, filename):
+    """Plot resistance coefficient K vs. Reynolds number, grouped by valve opening,
+    with each opening's Crane TP-410 literature K as a horizontal dashed line
+    (hollow marker) spanning that opening's measured Re range."""
     fig, ax = plt.subplots(figsize=(8, 6))
 
     for opening in ALL_VALVE_OPENINGS:
@@ -379,23 +408,28 @@ def create_valve_resistance_by_opening_plot(rows, title, filename):
             continue
         re = [r[1] for r in subset]
         k = [r[2] for r in subset]
-        ax.plot(re, k, ALL_VALVE_OPENING_MARKERS[opening], label=opening,
+        ax.plot(re, k, ALL_VALVE_OPENING_MARKERS[opening], label=f'{opening} (measured)',
                 color="black", markerfacecolor="black")
+        ax.plot([min(re), max(re)], [literature[opening]] * 2, '--',
+                marker=ALL_VALVE_OPENING_MARKERS[opening], color="black", markerfacecolor="none",
+                label=f'{opening} (literature)')
 
     ax.set_xscale("log")
+    ax.set_yscale("log")
     ax.set_xlabel("Reynolds Number")
     ax.set_ylabel("Resistance Coefficient K")
     ax.set_title(title)
-    ax.legend()
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
     ax.grid(True, which="both", color="gray", linewidth=0.5, alpha=0.5)
     fig.tight_layout()
-    fig.savefig(filename, dpi=200)
+    fig.savefig(filename, dpi=200, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved plot to {filename}")
 
-def create_equivalent_length_plot(rows, title, filename):
+def create_equivalent_length_plot(rows, literature, title, filename):
     """Plot equivalent length (in pipe diameters) vs. Reynolds number, grouped by
-    valve opening."""
+    valve opening, with each opening's Crane TP-410 literature Leq/D as a
+    horizontal dashed line (hollow marker) spanning that opening's measured Re range."""
     fig, ax = plt.subplots(figsize=(8, 6))
 
     for opening in ALL_VALVE_OPENINGS:
@@ -404,17 +438,21 @@ def create_equivalent_length_plot(rows, title, filename):
             continue
         re = [r[1] for r in subset]
         leq = [r[2] for r in subset]
-        ax.plot(re, leq, ALL_VALVE_OPENING_MARKERS[opening], label=opening,
+        ax.plot(re, leq, ALL_VALVE_OPENING_MARKERS[opening], label=f'{opening} (measured)',
                 color="black", markerfacecolor="black")
+        ax.plot([min(re), max(re)], [literature[opening]] * 2, '--',
+                marker=ALL_VALVE_OPENING_MARKERS[opening], color="black", markerfacecolor="none",
+                label=f'{opening} (literature)')
 
     ax.set_xscale("log")
+    ax.set_yscale("log")
     ax.set_xlabel("Reynolds Number")
     ax.set_ylabel("Equivalent Length, Leq/D")
     ax.set_title(title)
-    ax.legend()
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
     ax.grid(True, which="both", color="gray", linewidth=0.5, alpha=0.5)
     fig.tight_layout()
-    fig.savefig(filename, dpi=200)
+    fig.savefig(filename, dpi=200, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved plot to {filename}")
 
@@ -746,8 +784,19 @@ if __name__ == "__main__":
     for opening, re, k in valve_k_rows:
         print(f'{opening} valve: Re={re:.0f}, K={k:.2f}')
 
+    # Crane TP-410 literature comparison: K for the fully open valve is 340 * f_t,
+    # the fully-turbulent (Darcy) friction factor of the connecting pipe (using
+    # copper's roughness, per the assignment); other openings follow Crane's
+    # valve-in-reducer beta correction, assuming the restricted (trim) diameter is
+    # the stated fraction of the connecting pipe diameter
+    copper_roughness_in = PIPE_SPECS[("copper", 0.31)]["roughness_in"]
+    f_t, literature_k = literature_valve_k(copper_roughness_in, VALVE_DIAMETER_IN)
+    literature_leq = {opening: k / f_t for opening, k in literature_k.items()}
+    for opening in ALL_VALVE_OPENINGS:
+        print(f'{opening} valve (Crane literature): K={literature_k[opening]:.2f}, Leq/D={literature_leq[opening]:.1f}')
+
     create_valve_resistance_by_opening_plot(
-        valve_k_rows, "Resistance Coefficient vs. Reynolds Number (All Valve Openings)",
+        valve_k_rows, literature_k, "Resistance Coefficient vs. Reynolds Number (All Valve Openings)",
         "Figure_11.png")
 
     # deltaP/rho = 4f * Leq * (v^2/2) = K * (v^2/2), so Leq (in pipe diameters) = K / (4f);
@@ -759,5 +808,5 @@ if __name__ == "__main__":
         print(f'{opening} valve: Re={re:.0f}, Leq/D={leq:.1f}')
 
     create_equivalent_length_plot(
-        valve_leq_rows, "Equivalent Length vs. Reynolds Number (All Valve Openings)",
+        valve_leq_rows, literature_leq, "Equivalent Length vs. Reynolds Number (All Valve Openings)",
         "Figure_12.png")
