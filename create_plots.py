@@ -5,34 +5,30 @@ import matplotlib.pyplot as plt
 import plot_style
 from pipe_data import pipes as PIPE_MEASUREMENTS
 
-MARKERS = ["o", "^", "s", "D", "v"]  # distinct marker per pipe, black-and-white friendly
+MARKERS = ["o", "^", "s", "D", "v"]  # marker per pipe
 DISPLAY_MATERIAL = {"pvc": "PVC", "steel": "steel", "copper": "copper"}
 
 PSI_TO_PA = 6894.757293168
 DIAMETER_PATTERN = re.compile(r'(\d+\.\d+)\s*(?:"|inches)')
 TEMP_PATTERN = re.compile(r'LPM[^\d]*(\d+\.?\d*)')
 MATERIAL_PATTERN = re.compile(r'^(\S+)')
-MATERIAL_NAMES = {"pvc": "pvc", "ss": "steel", "cu": "copper"}  # note token -> pipe_data.py material
+MATERIAL_NAMES = {"pvc": "pvc", "ss": "steel", "cu": "copper"}
 
-# nominal diameter as labeled in the logging notes, in the same pipe order as
-# PIPE_MEASUREMENTS (material, measured diameter_in, length_in, roughness_microin)
 _NOMINAL_DIAMETERS_IN = [0.41, 0.285, 0.47, 0.31, 0.31]
 PIPE_SPECS = {
     (material, nominal): {"diameter_in": diameter_in, "length_in": length_in,
                            "roughness_in": roughness_microin * 1e-6}
     for (material, diameter_in, length_in, roughness_microin), nominal
-    in zip(PIPE_MEASUREMENTS, _NOMINAL_DIAMETERS_IN)
-}
-# same specs keyed by measured diameter alone, for lookups once a reading has
-# been matched to its pipe (measured diameters are unique across all 5 pipes)
+    in zip(PIPE_MEASUREMENTS, _NOMINAL_DIAMETERS_IN)}
+
 SPECS_BY_DIAMETER = {spec["diameter_in"]: spec for spec in PIPE_SPECS.values()}
 PIPE_MARKERS = {d: m for d, m in zip(sorted(SPECS_BY_DIAMETER), MARKERS)}
-
+#thresholds
 LAMINAR_RE = 2300
 TURBULENT_RE = 4000
 
-# a brief misclick started logging before the SS 0.31" pipe reached steady state
-# at 1.3 LPM on the lab slowflow run; drop those pre-steady-state samples
+# note misclick started logging before the SS 0.31" pipe reached steady state
+# at 1.3 LPM on the lab slowflow run, drop those pre-steady-state samples
 EXCLUDED_READINGS = {
     ("FLU-lab-Slowflow", "SS 0.31 inches 1.3 LPM 23.52", "1:06:07 PM"),
     ("FLU-lab-Slowflow", "SS 0.31 inches 1.3 LPM 23.52", "1:06:09 PM"),
@@ -156,7 +152,7 @@ def valve_resistance_rows(groups, rho):
         avg_dp = statistics.mean(pressures_pa)
         temp = float(TEMP_PATTERN.search(note).group(1))
         mu = viscosity_kestin(temp)
-        q = avg_flow / 60000  # LPM -> m^3/s
+        q = avg_flow / 60000  # LPM to m^3/s
         v = q / area
         re = rho * v * d / mu
         k = avg_dp / (0.5 * rho * v**2)
@@ -215,7 +211,7 @@ def valve_resistance_rows_by_opening(groups, rho):
         avg_dp = statistics.mean(pressures_pa)
         temp = float(TEMP_PATTERN.search(note).group(1))
         mu = viscosity_kestin(temp)
-        q = avg_flow / 60000  # LPM -> m^3/s
+        q = avg_flow / 60000  # LPM to m^3/s
         v = q / area
         re = rho * v * d / mu
         k = avg_dp / (0.5 * rho * v**2)
@@ -260,7 +256,7 @@ def reynolds_number(diameter_in, flow_rate_lpm, rho, mu):
     """Reynolds number for a pipe (measured diameter in inches) at a given flow rate (LPM)."""
     d = diameter_in * 0.0254
     area = math.pi / 4 * d**2
-    q = flow_rate_lpm / 60000  # LPM -> m^3/s
+    q = flow_rate_lpm / 60000  # LPM to m^3/s
     v = q / area
     return rho * v * d / mu
 
@@ -270,7 +266,7 @@ def friction_factor(diameter_in, flow_rate_lpm, delta_p, rho):
     d = diameter_in * 0.0254
     length = SPECS_BY_DIAMETER[diameter_in]["length_in"] * 0.0254
     area = math.pi / 4 * d**2
-    q = flow_rate_lpm / 60000  # LPM -> m^3/s
+    q = flow_rate_lpm / 60000  # LPM to m^3/s
     v = q / area
     return delta_p * d / (length * 2 * rho * v**2)
 
@@ -625,11 +621,7 @@ def create_regime_comparison_plot(results, regime_filter, correlation, correlati
     print(f"Saved plot to {filename} (R^2 = {r_squared:.4f})")
 
 if __name__ == "__main__":
-    # ------------------------------------------------------------------
-    # Old prelab-only analysis (power-law fits, globe valve, half-open valve):
-    # unchanged data source and rho definition, left as-is other than the
-    # flow/pressure filtering and the shared-helper signature updates above.
-    # ------------------------------------------------------------------
+    # prelab stuff
     slowflow_groups = parse_flow_pressure_groups("FLU-prelab-Slowflow")
     highflow_groups = parse_flow_pressure_groups("FLU_Prelab_Highflow")
 
@@ -687,8 +679,7 @@ if __name__ == "__main__":
     create_valve_resistance_plot(valve_resistance, K_REFERENCE)
 
     # ------------------------------------------------------------------
-    # New combined prelab + lab analysis (Figures 1-4 and the correlation
-    # comparisons), covering all 5 pipes (3 PVC, steel, copper).
+    # New combined prelab + lab analysis 
     # ------------------------------------------------------------------
     all_groups = (
         parse_flow_pressure_groups("FLU-prelab-Slowflow")
@@ -737,7 +728,7 @@ if __name__ == "__main__":
         pvc_friction_results, "Friction Factor vs. Reynolds Number (PVC Pipes)", "Figure_4.png")
 
     # all 5 pipes are hydraulically smooth (eps/D ~1e-5), so their correlation
-    # curves are visually nearly identical; use the mean eps/D across all pipes
+    # curves are visually nearly identical; use the mean eps/D across all pipes for correlations
     # for a single representative curve
     mean_eps_over_d = statistics.mean(spec["roughness_in"] / spec["diameter_in"]
                                        for spec in SPECS_BY_DIAMETER.values())
