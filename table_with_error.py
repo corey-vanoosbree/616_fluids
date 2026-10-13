@@ -10,9 +10,9 @@ def diameter_error(diameters, caliper_acc=0.001, confidence=0.95):
     """Combined uncertainty in mean pipe ID (in): U_C = sqrt(U_A^2 + U_B^2)."""
     d = np.asarray(diameters, dtype=float)
     n = d.size
-    t = stats.t.ppf(1 - (1 - confidence) / 2, n - 1)  # t = 2.776 for n = 5
-    U_A = t * d.std(ddof=1) / np.sqrt(n)  # random: scatter between angles
-    U_B = caliper_acc                     # systematic: same caliper, so no /sqrt(n)
+    t = stats.t.ppf(1 - (1 - confidence) / 2, n - 1) 
+    U_A = t * d.std(ddof=1) / np.sqrt(n)  
+    U_B = caliper_acc                     
     return np.hypot(U_A, U_B)
 
 pipes = [(material, np.mean(d), diameter_error(d), length, roughness)
