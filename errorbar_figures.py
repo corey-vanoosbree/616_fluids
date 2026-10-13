@@ -83,7 +83,7 @@ def u_a(values):
 
 
 def u_b_flow(side, q):
-    return 0.03 * q if side == "A" else 0.02 * 12 * 3.785411784
+    return 0.03 * q if side == "A" else 0.02 * q
 
 
 def u_b_dp(side):
