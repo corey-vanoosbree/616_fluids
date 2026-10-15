@@ -161,18 +161,39 @@ def pipes_in(points):
 
 
 def flow_vs_pressure_plot(points, title, filename):
+    """Plot pressure drop vs. flow rate across both the low- and high-flow-side
+    datasets (side "A"/slowflow vs "B"/highflow, different transducers/ranges),
+    but fit the power law (deltaP = a * Q^n) to each pipe's high-flow-side
+    points only. High-flow points are filled; low-flow points are open."""
     fig, ax = plt.subplots(figsize=(8, 6))
     fits = []
     for material, d in pipes_in(points):
         sub = sorted([p for p in points if (p["material"], p["D_in"]) == (material, d)], key=lambda p: p["Q"])
-        q, dp = [p["Q"] for p in sub], [p["P"] for p in sub]
-        ax.errorbar(q, dp, xerr=[p["U_Q"] for p in sub], yerr=[p["U_P"] for p in sub], fmt=cp.PIPE_MARKERS[d],
-                    label=cp.pipe_label(material, d), **ERRORBAR_STYLE)
-        a, n = cp.power_law_fit(q, dp)
-        q_curve = [min(q) * (max(q) / min(q))**(i / 99) for i in range(100)]
+        marker = cp.PIPE_MARKERS[d]
+
+        low = [p for p in sub if p["side"] == "A"]
+        if low:
+            ax.errorbar([p["Q"] for p in low], [p["P"] for p in low], xerr=[p["U_Q"] for p in low],
+                        yerr=[p["U_P"] for p in low], fmt=marker,
+                        **{**ERRORBAR_STYLE, "markerfacecolor": "none"})
+
+        high = [p for p in sub if p["side"] == "B"]
+        if high:
+            ax.errorbar([p["Q"] for p in high], [p["P"] for p in high], xerr=[p["U_Q"] for p in high],
+                        yerr=[p["U_P"] for p in high], fmt=marker, label=cp.pipe_label(material, d),
+                        **ERRORBAR_STYLE)
+
+        if not high:
+            continue
+        fit_q, fit_dp = [p["Q"] for p in high], [p["P"] for p in high]
+        a, n = cp.power_law_fit(fit_q, fit_dp)
+        q_curve = [min(fit_q) * (max(fit_q) / min(fit_q))**(i / 99) for i in range(100)]
         ax.plot(q_curve, [a * x**n for x in q_curve], "--", color="black")
-        fits.append((material, d, n, r_squared(dp, [a * x**n for x in q])))
-    ax.text(0.97, 0.03, "\n".join(f"{cp.pipe_label(m, d)}: ΔP ~ Q^{n:.2f} (R² = {r2:.4f})" for m, d, n, r2 in fits),
+        fits.append((material, d, n, r_squared(fit_dp, [a * x**n for x in fit_q])))
+    ax.errorbar([], [], fmt='o', label="high-flow data (fit)", **ERRORBAR_STYLE)
+    ax.errorbar([], [], fmt='o', label="low-flow data", **{**ERRORBAR_STYLE, "markerfacecolor": "none"})
+    ax.text(0.97, 0.03, "\n".join(f"{cp.pipe_label(m, d)}: ΔP ~ Q^{n:.2f} (R² = {r2:.4f})"
+                                   for m, d, n, r2 in fits),
             transform=ax.transAxes, fontsize=10, va="bottom", ha="right",
             bbox=dict(facecolor="white", edgecolor="gray", alpha=0.8))
     ax.set(xscale="log", yscale="log", xlabel="Flow Rate (LPM)", ylabel="Pressure Drop (Pa)", title=title)
