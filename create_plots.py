@@ -260,16 +260,41 @@ def romeo_royo_monzon_fanning(re, eps_over_d):
     return (-4 * outer)**-2
 
 def friction_reynolds(rows, rho):
+    """Returns (material, diameter_in, re, f, side) per row."""
     results = []
     for material, diameter_in, avg_flow, avg_dp, temp, side in rows:
         mu = viscosity_kestin(temp)
         re = reynolds_number(diameter_in, avg_flow, rho, mu)
         f = friction_factor(diameter_in, avg_flow, avg_dp, rho)
-        results.append((material, diameter_in, re, f))
+        results.append((material, diameter_in, re, f, side))
     return results
 
 def pipes_present(rows):
     return sorted(set((r[0], r[1]) for r in rows))
+
+def plot_pipes_by_side(ax, rows, label_suffix="", **marker_kwargs):
+    """Plot each (material, diameter) pipe's points, split by side: open markers
+    for low-flow data, filled markers for high-flow data. Adds one legend entry
+    per pipe (keyed to its filled series) plus two generic entries explaining
+    the open/filled convention. `rows` entries have x, y at indices 2, 3 and
+    end with a "slow"/"high" side field."""
+    for material, diameter_in in pipes_present(rows):
+        subset = [r for r in rows if r[0] == material and r[1] == diameter_in]
+        marker = PIPE_MARKERS[diameter_in]
+
+        low = [r for r in subset if r[-1] == "slow"]
+        if low:
+            ax.plot([r[2] for r in low], [r[3] for r in low], marker, color="black",
+                    markerfacecolor="none", **marker_kwargs)
+
+        high = [r for r in subset if r[-1] == "high"]
+        if high:
+            ax.plot([r[2] for r in high], [r[3] for r in high], marker, color="black",
+                    markerfacecolor="black", label=f'{pipe_label(material, diameter_in)}{label_suffix}',
+                    **marker_kwargs)
+
+    ax.plot([], [], 'o', color="black", markerfacecolor="black", label="high-flow data")
+    ax.plot([], [], 'o', color="black", markerfacecolor="none", label="low-flow data")
 
 def create_flow_vs_pressure_plot(rows, title, filename):
     """Plot pressure drop vs. flow rate across both the low- and high-flow
@@ -436,12 +461,7 @@ def create_friction_plot(results, title, filename):
     ax.axvline(LAMINAR_RE, color="black", linestyle="--", linewidth=1)
     ax.axvline(TURBULENT_RE, color="black", linestyle="--", linewidth=1)
 
-    for material, diameter_in in pipes_present(results):
-        subset = [r for r in results if r[0] == material and r[1] == diameter_in]
-        re = [r[2] for r in subset]
-        f = [r[3] for r in subset]
-        ax.plot(re, f, PIPE_MARKERS[diameter_in], label=pipe_label(material, diameter_in),
-                color="black", markerfacecolor="black")
+    plot_pipes_by_side(ax, results)
 
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -455,7 +475,7 @@ def create_friction_plot(results, title, filename):
         ax.text(x, 0.97, label, transform=ax.get_xaxis_transform(),
                 ha="center", va="top", fontsize=9, color="black")
 
-    ax.legend(loc="lower left")
+    ax.legend(loc="lower left", fontsize=9)
     ax.grid(True, which="both", color="gray", linewidth=0.5, alpha=0.5)
     fig.tight_layout()
     fig.savefig(filename, dpi=200)
@@ -548,12 +568,7 @@ def create_regime_comparison_plot(results, regime_filter, correlation, correlati
 
     fig, ax = plt.subplots(figsize=(8, 6))
 
-    for material, diameter_in in pipes_present(subset_all):
-        subset = [r for r in subset_all if r[0] == material and r[1] == diameter_in]
-        re = [r[2] for r in subset]
-        f = [r[3] for r in subset]
-        ax.plot(re, f, PIPE_MARKERS[diameter_in], label=f'{pipe_label(material, diameter_in)} (measured)',
-                color="black", markerfacecolor="black")
+    plot_pipes_by_side(ax, subset_all, label_suffix=" (measured)")
 
     re_min = min(r[2] for r in subset_all)
     re_max = max(r[2] for r in subset_all)
@@ -576,12 +591,80 @@ def create_regime_comparison_plot(results, regime_filter, correlation, correlati
     ax.set_xlabel("Reynolds Number")
     ax.set_ylabel("Fanning Friction Factor")
     ax.set_title(title)
-    ax.legend()
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
     ax.grid(True, which="both", color="gray", linewidth=0.5, alpha=0.5)
     fig.tight_layout()
-    fig.savefig(filename, dpi=200)
+    fig.savefig(filename, dpi=200, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved plot to {filename} (R^2 = {r_squared:.4f})")
+
+def create_all_correlations_plot(results, eps_over_d, filename):
+    """Overlay all 5 correlations (each evaluated over its own applicable Re
+    range, against all pipes) on one friction-factor-vs-Reynolds-number plot,
+    shaded by flow regime, with each correlation's own R^2 labeled."""
+    fig, ax = plt.subplots(figsize=(9, 7))
+
+    re_min = min(r[2] for r in results)
+    re_max = max(r[2] for r in results)
+    ax.axvspan(re_min, LAMINAR_RE, color="black", alpha=0.06)
+    ax.axvspan(LAMINAR_RE, TURBULENT_RE, color="black", alpha=0.16)
+    ax.axvspan(TURBULENT_RE, re_max, color="black", alpha=0.0)
+    ax.axvline(LAMINAR_RE, color="black", linestyle="--", linewidth=1)
+    ax.axvline(TURBULENT_RE, color="black", linestyle="--", linewidth=1)
+
+    plot_pipes_by_side(ax, results, markersize=5, alpha=0.5)
+
+    for label, x in [("Laminar", (re_min * LAMINAR_RE)**0.5),
+                      ("Transitional", (LAMINAR_RE * TURBULENT_RE)**0.5),
+                      ("Turbulent", (TURBULENT_RE * re_max)**0.5)]:
+        ax.text(x, 0.97, label, transform=ax.get_xaxis_transform(),
+                ha="center", va="top", fontsize=9, color="black")
+
+    correlations = [
+        ("f = 16/Re", lambda re: 16 / re, lambda re: re < LAMINAR_RE, "-."),
+        ("f = 0.079 Re^-0.25 (Blasius)", lambda re: 0.079 * re**-0.25, lambda re: re > TURBULENT_RE, ":"),
+        ("Haaland", lambda re: haaland_fanning(re, eps_over_d), lambda re: re > TURBULENT_RE, "--"),
+        ("Churchill", lambda re: churchill_fanning(re, eps_over_d), lambda re: True, "-"),
+        ("Romeo, Royo & Monzon", lambda re: romeo_royo_monzon_fanning(re, eps_over_d),
+         lambda re: re > TURBULENT_RE, (0, (3, 1, 1, 1))),
+    ]
+
+    r2_lines = []
+    for label, correlation, regime_filter, linestyle in correlations:
+        subset = [r for r in results if regime_filter(r[2])]
+        if not subset:
+            continue
+        sub_re_min = min(r[2] for r in subset)
+        sub_re_max = max(r[2] for r in subset)
+        re_curve = [sub_re_min * (sub_re_max / sub_re_min)**(i / 99) for i in range(100)]
+        f_curve = [correlation(re) for re in re_curve]
+        ax.plot(re_curve, f_curve, linestyle=linestyle, color="black", linewidth=1.6, label=label)
+
+        measured_f = [r[3] for r in subset]
+        predicted_f = [correlation(r[2]) for r in subset]
+        mean_f = statistics.mean(measured_f)
+        ss_res = sum((mf - pf)**2 for mf, pf in zip(measured_f, predicted_f))
+        ss_tot = sum((mf - mean_f)**2 for mf in measured_f)
+        r_squared = 1 - ss_res / ss_tot if ss_tot else float("nan")
+        r2_lines.append(f"{label}: R² = {r_squared:.4f}")
+
+    annotation = "\n".join(r2_lines)
+    ax.text(0.015, 0.015, annotation, transform=ax.transAxes, fontsize=9, va="bottom", ha="left",
+            bbox=dict(facecolor="white", edgecolor="gray", alpha=0.85))
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Reynolds Number")
+    ax.set_ylabel("Fanning Friction Factor")
+    ax.set_title("Friction Factor vs. Reynolds Number: All Correlations (All Pipes)")
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
+    ax.grid(True, which="both", color="gray", linewidth=0.5, alpha=0.5)
+    fig.tight_layout()
+    fig.savefig(filename, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved plot to {filename}")
+    for line in r2_lines:
+        print(f"  {line}")
 
 if __name__ == "__main__":
     # prelab stuff
@@ -601,13 +684,13 @@ if __name__ == "__main__":
     print(f"Average temp across prelab runs: {avg_temp:.2f} C -> rho (Kell) = {rho:.3f} kg/m^3")
 
     friction_results = friction_reynolds(rows, rho)
-    for material, diameter_in, re, f in friction_results:
+    for material, diameter_in, re, f, side in friction_results:
         print(f'{pipe_label(material, diameter_in)} pipe: Re={re:.0f}, f={f:.4f}')
 
     # (diameter, avg_flow, avg_dp) split by flow regime, using each row's own Reynolds
     # number from friction_results (rows and friction_results share index order)
-    laminar_flow_rows = [(d, q, dp) for (_, d, q, dp, _, _), (_, _, re, _) in zip(rows, friction_results) if re < LAMINAR_RE]
-    turbulent_flow_rows = [(d, q, dp) for (_, d, q, dp, _, _), (_, _, re, _) in zip(rows, friction_results) if re > TURBULENT_RE]
+    laminar_flow_rows = [(d, q, dp) for (_, d, q, dp, _, _), (_, _, re, _, _) in zip(rows, friction_results) if re < LAMINAR_RE]
+    turbulent_flow_rows = [(d, q, dp) for (_, d, q, dp, _, _), (_, _, re, _, _) in zip(rows, friction_results) if re > TURBULENT_RE]
 
     create_powerlaw_plot(
         laminar_flow_rows, "Laminar Pressure Drop vs. Flow Rate (Power-Law Fit)",
@@ -662,7 +745,7 @@ if __name__ == "__main__":
     print(f"Average temp over the lab day: {avg_temp_lab_day:.2f} C -> rho (Kell) = {rho_all:.3f} kg/m^3")
 
     friction_results_all = friction_reynolds(all_rows, rho_all)
-    for material, diameter_in, re, f in friction_results_all:
+    for material, diameter_in, re, f, side in friction_results_all:
         print(f'{pipe_label(material, diameter_in)} pipe: Re={re:.0f}, f={f:.4f}')
 
     pvc_diameters = {spec["diameter_in"] for (m, _), spec in PIPE_SPECS.items() if m == "pvc"}
@@ -767,3 +850,5 @@ if __name__ == "__main__":
     create_equivalent_length_plot(
         valve_leq_rows, literature_leq, "Equivalent Length vs. Reynolds Number (All Valve Openings)",
         "Figure_12.png")
+
+    create_all_correlations_plot(friction_results_all, mean_eps_over_d, "Figure_13.png")

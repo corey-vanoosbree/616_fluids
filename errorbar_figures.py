@@ -160,6 +160,37 @@ def pipes_in(points):
     return sorted({(p["material"], p["D_in"]) for p in points})
 
 
+def plot_pipes_by_side(ax, points, x_key, y_key, label_suffix="", **marker_kwargs):
+    """Plot each pipe's points split by side: open markers for low-flow (side
+    "A") data, filled for high-flow (side "B") data. Adds one legend entry per
+    pipe (keyed to its filled series) plus two generic entries explaining the
+    open/filled convention."""
+    handles = []
+    for material, d in pipes_in(points):
+        sub = [p for p in points if (p["material"], p["D_in"]) == (material, d)]
+        marker = cp.PIPE_MARKERS[d]
+
+        low = [p for p in sub if p["side"] == "A"]
+        if low:
+            # not appended to handles: unlabeled, and explicit `handles=` legend
+            # calls (unlike the implicit ax.legend()) don't auto-skip those
+            ax.errorbar([p[x_key] for p in low], [p[y_key] for p in low],
+                        xerr=[p["U_" + x_key] for p in low], yerr=[p["U_" + y_key] for p in low],
+                        fmt=marker, **{**ERRORBAR_STYLE, "markerfacecolor": "none"}, **marker_kwargs)
+
+        high = [p for p in sub if p["side"] == "B"]
+        if high:
+            handles.append(ax.errorbar([p[x_key] for p in high], [p[y_key] for p in high],
+                                        xerr=[p["U_" + x_key] for p in high], yerr=[p["U_" + y_key] for p in high],
+                                        fmt=marker, label=f"{cp.pipe_label(material, d)}{label_suffix}",
+                                        **ERRORBAR_STYLE, **marker_kwargs))
+
+    handles.append(ax.errorbar([], [], fmt='o', label="high-flow data", **ERRORBAR_STYLE))
+    handles.append(ax.errorbar([], [], fmt='o', label="low-flow data",
+                                **{**ERRORBAR_STYLE, "markerfacecolor": "none"}))
+    return handles
+
+
 def flow_vs_pressure_plot(points, title, filename):
     """Plot pressure drop vs. flow rate across both the low- and high-flow-side
     datasets (side "A"/slowflow vs "B"/highflow, different transducers/ranges),
@@ -210,17 +241,13 @@ def friction_plot(points, title, filename):
     ax.axvspan(cp.LAMINAR_RE, cp.TURBULENT_RE, color="black", alpha=0.16)
     ax.axvline(cp.LAMINAR_RE, color="black", linestyle="--", linewidth=1)
     ax.axvline(cp.TURBULENT_RE, color="black", linestyle="--", linewidth=1)
-    for material, d in pipes_in(points):
-        sub = [p for p in points if (p["material"], p["D_in"]) == (material, d)]
-        ax.errorbar([p["Re"] for p in sub], [p["f"] for p in sub], xerr=[p["U_Re"] for p in sub],
-                    yerr=[p["U_f"] for p in sub], fmt=cp.PIPE_MARKERS[d], label=cp.pipe_label(material, d),
-                    **ERRORBAR_STYLE)
+    plot_pipes_by_side(ax, points, "Re", "f")
     ax.set(xscale="log", yscale="log", xlabel="Reynolds Number", ylabel="Fanning Friction Factor", title=title)
     for label, x in [("Laminar", (re_min * cp.LAMINAR_RE)**0.5),
                      ("Transitional", (cp.LAMINAR_RE * cp.TURBULENT_RE)**0.5),
                      ("Turbulent", (cp.TURBULENT_RE * re_max)**0.5)]:
         ax.text(x, 0.97, label, transform=ax.get_xaxis_transform(), ha="center", va="top", fontsize=9)
-    ax.legend(loc="lower left")
+    ax.legend(loc="lower left", fontsize=9)
     save(fig, ax, filename)
     print(f"Saved {OUT / filename}")
 
@@ -228,12 +255,7 @@ def friction_plot(points, title, filename):
 def regime_comparison_plot(points, in_regime, correlation, correlation_label, title, filename):
     points = [p for p in points if in_regime(p["Re"])]
     fig, ax = plt.subplots(figsize=(8, 6))
-    handles = []
-    for material, d in pipes_in(points):
-        sub = [p for p in points if (p["material"], p["D_in"]) == (material, d)]
-        handles.append(ax.errorbar([p["Re"] for p in sub], [p["f"] for p in sub], xerr=[p["U_Re"] for p in sub],
-                                   yerr=[p["U_f"] for p in sub], fmt=cp.PIPE_MARKERS[d],
-                                   label=f"{cp.pipe_label(material, d)} (measured)", **ERRORBAR_STYLE))
+    handles = plot_pipes_by_side(ax, points, "Re", "f", label_suffix=" (measured)")
     re_min, re_max = min(p["Re"] for p in points), max(p["Re"] for p in points)
     re_curve = [re_min * (re_max / re_min)**(i / 99) for i in range(100)]
     handles += ax.plot(re_curve, [correlation(x) for x in re_curve], "--", color="black", label=correlation_label)
@@ -241,9 +263,59 @@ def regime_comparison_plot(points, in_regime, correlation, correlation_label, ti
     ax.text(0.03, 0.03, f"R² = {r2:.4f}", transform=ax.transAxes, fontsize=10, va="bottom", ha="left",
             bbox=dict(facecolor="white", edgecolor="gray", alpha=0.8))
     ax.set(xscale="log", yscale="log", xlabel="Reynolds Number", ylabel="Fanning Friction Factor", title=title)
-    ax.legend(handles=handles)
-    save(fig, ax, filename)
+    ax.legend(handles=handles, loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
+    save(fig, ax, filename, tight_bbox=True)
     print(f"Saved {OUT / filename} (R^2 = {r2:.4f})")
+
+
+def all_correlations_plot(points, eps_over_d, filename):
+    """Overlay all 5 correlations (each evaluated over its own applicable Re
+    range, against all pipes) on one friction-factor-vs-Reynolds-number plot,
+    shaded by flow regime, with each correlation's own R^2 labeled."""
+    fig, ax = plt.subplots(figsize=(9, 7))
+    re_min, re_max = min(p["Re"] for p in points), max(p["Re"] for p in points)
+    ax.axvspan(re_min, cp.LAMINAR_RE, color="black", alpha=0.06)
+    ax.axvspan(cp.LAMINAR_RE, cp.TURBULENT_RE, color="black", alpha=0.16)
+    ax.axvline(cp.LAMINAR_RE, color="black", linestyle="--", linewidth=1)
+    ax.axvline(cp.TURBULENT_RE, color="black", linestyle="--", linewidth=1)
+
+    handles = plot_pipes_by_side(ax, points, "Re", "f", markersize=5, alpha=0.5)
+
+    for label, x in [("Laminar", (re_min * cp.LAMINAR_RE)**0.5),
+                     ("Transitional", (cp.LAMINAR_RE * cp.TURBULENT_RE)**0.5),
+                     ("Turbulent", (cp.TURBULENT_RE * re_max)**0.5)]:
+        ax.text(x, 0.97, label, transform=ax.get_xaxis_transform(), ha="center", va="top", fontsize=9)
+
+    correlations = [
+        ("f = 16/Re", lambda re: 16 / re, lambda re: re < cp.LAMINAR_RE, "-."),
+        ("f = 0.079 Re^-0.25 (Blasius)", lambda re: 0.079 * re**-0.25, lambda re: re > cp.TURBULENT_RE, ":"),
+        ("Haaland", lambda re: cp.haaland_fanning(re, eps_over_d), lambda re: re > cp.TURBULENT_RE, "--"),
+        ("Churchill", lambda re: cp.churchill_fanning(re, eps_over_d), lambda re: True, "-"),
+        ("Romeo, Royo & Monzon", lambda re: cp.romeo_royo_monzon_fanning(re, eps_over_d),
+         lambda re: re > cp.TURBULENT_RE, (0, (3, 1, 1, 1))),
+    ]
+
+    r2_lines = []
+    for label, correlation, in_regime, linestyle in correlations:
+        subset = [p for p in points if in_regime(p["Re"])]
+        if not subset:
+            continue
+        sub_re_min, sub_re_max = min(p["Re"] for p in subset), max(p["Re"] for p in subset)
+        re_curve = [sub_re_min * (sub_re_max / sub_re_min)**(i / 99) for i in range(100)]
+        handles += ax.plot(re_curve, [correlation(x) for x in re_curve], linestyle=linestyle, color="black",
+                           linewidth=1.6, label=label)
+        r2 = r_squared([p["f"] for p in subset], [correlation(p["Re"]) for p in subset])
+        r2_lines.append(f"{label}: R² = {r2:.4f}")
+
+    ax.text(0.015, 0.015, "\n".join(r2_lines), transform=ax.transAxes, fontsize=9, va="bottom", ha="left",
+            bbox=dict(facecolor="white", edgecolor="gray", alpha=0.85))
+    ax.set(xscale="log", yscale="log", xlabel="Reynolds Number", ylabel="Fanning Friction Factor",
+           title="Friction Factor vs. Reynolds Number: All Correlations (All Pipes)")
+    ax.legend(handles=handles, loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
+    save(fig, ax, filename, tight_bbox=True)
+    print(f"Saved {OUT / filename}")
+    for line in r2_lines:
+        print(f"  {line}")
 
 
 def valve_flow_pressure_plot(points, title, filename):
@@ -358,10 +430,11 @@ def main():
                            "Resistance Coefficient vs. Reynolds Number (All Valve Openings)", "Figure_11.png")
     valve_vs_reynolds_plot(valves, "Leq", literature_leq, "Equivalent Length, Leq/D",
                            "Equivalent Length vs. Reynolds Number (All Valve Openings)", "Figure_12.png")
+    all_correlations_plot(pipes, MEAN_EPS_OVER_D, "Figure_13.png")
 
-    images = [Image.open(OUT / f"Figure_{n}.png").convert("RGB") for n in range(1, 13)]
-    images[0].save(OUT / "Figures_1-12_errorbars.pdf", save_all=True, append_images=images[1:], resolution=200)
-    print(f"Saved {OUT / 'Figures_1-12_errorbars.pdf'}")
+    images = [Image.open(OUT / f"Figure_{n}.png").convert("RGB") for n in range(1, 14)]
+    images[0].save(OUT / "Figures_1-13_errorbars.pdf", save_all=True, append_images=images[1:], resolution=200)
+    print(f"Saved {OUT / 'Figures_1-13_errorbars.pdf'}")
 
 
 if __name__ == "__main__":
