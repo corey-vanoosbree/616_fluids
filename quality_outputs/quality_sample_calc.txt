@@ -1,0 +1,60 @@
+FLU tour data: sample uncertainty calculations (quality.py)
+
+Side A, 0.282 in PVC: logged as "PVC (1) 0.285" 0.5 LPM (23.06C)" (laminar)
+===========================================================================
+
+1) Flow rate:  U_A = k_c·SSD/√n,  k_c = T.INV.2T(0.05, n − 1);  U_c = √(U_A² + U_B²)
+   Q = mean of 51 readings = 0.5456 L/min;  SSD = 0.0199;  k_c = 2.009
+   U_A = 2.009 × 0.0199 / √51 = 0.0056 L/min;   U_B = 0.03 × Q (FTB2001: ±3% of reading) = 0.0164 L/min
+   U_Q = √(0.0056² + 0.0164²) = 0.0173 L/min   →   U_Q/Q = 3.17%
+
+2) Pressure drop
+   ΔP = mean of 51 readings × 6894.76 Pa/psi = 231.1 Pa;  SSD = 78.7 Pa;  k_c = 2.009
+   U_A = 2.009 × 78.7 / √51 = 22.1 Pa;   U_B = 0.0008 × 1 psid × 6894.76 = 5.5 Pa (0.08% of full scale)
+   U_ΔP = √(22.1² + 5.5²) = 22.8 Pa   →   U_ΔP/ΔP = 9.87%
+
+3) Geometry and water properties
+   D = 0.282 in = 7.163 mm ± 0.0316 mm (U_D/D = 0.44%);  L = 70.5 in = 1.7907 m ± 1.77 mm (U_L/L = 0.099%)
+   T = 23.06 ± 0.20 °C (note);  ρ (Kell) = 997.52 kg/m³ (±0.005%);  μ (Kestin) = 0.9311 mPa·s (±0.47%)
+
+4) Velocity and Reynolds number
+   v = 4Q/(πD²) = 0.2257 m/s;   Re = ρvD/μ = 997.52 × 0.2257 × 0.00716 / 9.3107e-04 = 1732
+   U_Re/Re = √((U_Q/Q)² + (U_D/D)² + (U_ρ/ρ)² + (U_μ/μ)²) = 3.24%   →   Re = 1730 ± 60
+
+5) Friction loss and Fanning friction factor
+   F̂ = ΔP/ρ = 0.2317 J/kg   →   F̂ = 0.232 ± 0.023 J/kg
+   f = ¼(D/L)·ΔP/(ρv²/2)    [units: (m/m)·Pa/((kg/m³)(m/s)²) = dimensionless]
+   f = 0.25 × (0.00716/1.7907) × 231.1 / (997.52 × 0.2257²/2) = 0.009096
+   U_f/f = √((U_ΔP/ΔP)² + (5U_D/D)² + (2U_Q/Q)² + (U_L/L)² + (U_ρ/ρ)²) = √(9.87%² + 2.21%² + 6.34%² + 0.099%² + 0.005%²) = 11.94%
+   Report (3-30 rule): f = 0.0091 ± 0.0011;   largest term: dP
+   Comparison: 16Re = 0.009238 (-1.5%); inside ±U_f: yes
+
+
+Side B, 0.408 in PVC: logged as "PVC 0.41 inches 14.5 LPM 23.62" (turbulent)
+============================================================================
+
+1) Flow rate:  U_A = k_c·SSD/√n,  k_c = T.INV.2T(0.05, n − 1);  U_c = √(U_A² + U_B²)
+   Q = mean of 38 readings = 14.6170 L/min;  SSD = 0.0457;  k_c = 2.026
+   U_A = 2.026 × 0.0457 / √38 = 0.0150 L/min;   U_B = 0.02 × 12 gpm × 3.785 L/gal (FV102: ±2% of full scale) = 0.9085 L/min
+   U_Q = √(0.0150² + 0.9085²) = 0.9086 L/min   →   U_Q/Q = 6.22%
+
+2) Pressure drop
+   ΔP = mean of 38 readings × 6894.76 Pa/psi = 17841.7 Pa;  SSD = 131.3 Pa;  k_c = 2.026
+   U_A = 2.026 × 131.3 / √38 = 43.2 Pa;   U_B = 0.0008 × 15 psid × 6894.76 = 82.7 Pa (0.08% of full scale)
+   U_ΔP = √(43.2² + 82.7²) = 93.3 Pa   →   U_ΔP/ΔP = 0.52%
+
+3) Geometry and water properties
+   D = 0.408 in = 10.363 mm ± 0.0316 mm (U_D/D = 0.31%);  L = 76.0 in = 1.9304 m ± 1.77 mm (U_L/L = 0.092%)
+   T = 23.62 ± 0.20 °C (note);  ρ (Kell) = 997.39 kg/m³ (±0.005%);  μ (Kestin) = 0.9190 mPa·s (±0.47%)
+
+4) Velocity and Reynolds number
+   v = 4Q/(πD²) = 2.8882 m/s;   Re = ρvD/μ = 997.39 × 2.8882 × 0.01036 / 9.1896e-04 = 32485
+   U_Re/Re = √((U_Q/Q)² + (U_D/D)² + (U_ρ/ρ)² + (U_μ/μ)²) = 6.24%   →   Re = 32500 ± 2000
+
+5) Friction loss and Fanning friction factor
+   F̂ = ΔP/ρ = 17.8884 J/kg   →   F̂ = 17.89 ± 0.09 J/kg
+   f = ¼(D/L)·ΔP/(ρv²/2)    [units: (m/m)·Pa/((kg/m³)(m/s)²) = dimensionless]
+   f = 0.25 × (0.01036/1.9304) × 17841.7 / (997.39 × 2.8882²/2) = 0.005756
+   U_f/f = √((U_ΔP/ΔP)² + (5U_D/D)² + (2U_Q/Q)² + (U_L/L)² + (U_ρ/ρ)²) = √(0.52%² + 1.53%² + 12.43%² + 0.092%² + 0.005%²) = 12.54%
+   Report (3-30 rule): f = 0.0058 ± 0.0007;   largest term: 2Q
+   Comparison: Churchill = 0.005746 (+0.2%); inside ±U_f: yes
