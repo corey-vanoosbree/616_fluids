@@ -1,6 +1,5 @@
-"""Pump efficiency vs. flow rate at 45 Hz. Requires matplotlib.
-
-Usage: python pump_efficiency.py [pump_chart_60Hz.csv]
+"""
+Pump efficiency vs. flow rate at 45 Hz.
 """
 import csv
 import logging
