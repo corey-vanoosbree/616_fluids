@@ -1,5 +1,6 @@
-"""
-Pump efficiency vs. flow rate at 45 Hz.
+"""Pump efficiency vs. flow rate at 45 Hz. Requires matplotlib.
+
+Usage: python pump_efficiency.py [pump_chart_60Hz.csv]
 """
 import csv
 import logging
@@ -24,7 +25,7 @@ F_RATIO = 45 / 60
 PO_BRAKE_60_HP = 0.75
 PO_BRAKE_HP = 0.32
 ETA_MOTOR = 0.72
-Q_TABLE = [0, 2, 4, 6, 8, 10, 12, 14]
+Q_TABLE = [0, 2, 4, 6, 8, 10, 12]
 
 PUMP_CHART_60HZ = [(10, 72), (15, 68), (20, 63), (30, 53), (40, 41), (50, 22), (55, 0)]  # head / ft, flow / GPM
 
@@ -128,7 +129,7 @@ def main(chart_path=None):
     dp_op = interp(chart, q_op, 1)
 
     rows = []
-    for q in Q_TABLE + [q_op]:
+    for q in Q_TABLE:
         s = system_losses(q)
         rows.append({
             "flow_rate_LPM": round(q, 3),
@@ -138,7 +139,6 @@ def main(chart_path=None):
             "eta_pump_calc_pct": efficiency(q, s["dP_total_Pa"]),
             "dP_pump_chart_Pa": interp(chart, q, 1),
             "eta_pump_chart_pct": interp(chart, q, 2),
-            "reachable": q <= q_op + 1e-9,
         })
     out_csv = out_dir / "system_curve_results.csv"
     with out_csv.open("w", newline="") as fh:
@@ -182,9 +182,14 @@ def main(chart_path=None):
     print(f"Electrical power: {PO_BRAKE_HP * HP / ETA_MOTOR:.1f} W")
     print(f"Operating point: {q_op:.2f} L/min, {dp_op:.0f} Pa")
     print(f"Efficiency curves intersect at {q_x:.2f} L/min, {eta_x:.2f} %")
+    print()
+    print(f'{"Q":>7} {"dP_pipe":>9} {"dP_fitt":>9} {"dP_exp":>9} {"dP_total":>9} {"Po_hyd":>7} {"eta_calc":>8} {"eta_chart":>9}')
+    print(f'{"L/min":>7} {"Pa":>9} {"Pa":>9} {"Pa":>9} {"Pa":>9} {"W":>7} {"%":>8} {"%":>9}')
     for r in rows:
-        print(f'{r["flow_rate_LPM"]:7.3f}  dP_sys {r["dP_total_Pa"]:9.0f}  dP_pump {r["dP_pump_chart_Pa"]:7.0f}  '
-              f'eta_calc {r["eta_pump_calc_pct"]:5.2f}  eta_chart {r["eta_pump_chart_pct"]:5.2f}')
+        print(f'{r["flow_rate_LPM"]:7.3f} {r["dP_pipe_tube_Pa"]:9.0f} {r["dP_fitt_bend_Pa"]:9.0f} '
+              f'{r["dP_exp_cont_Pa"]:9.0f} {r["dP_total_Pa"]:9.0f} {r["Po_hyd_W"]:7.2f} '
+              f'{r["eta_pump_calc_pct"]:8.2f} {r["eta_pump_chart_pct"]:9.2f}')
+    print()
     print(f"Wrote {out_csv}\n      {out_png}")
 
 
