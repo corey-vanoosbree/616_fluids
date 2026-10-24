@@ -12,6 +12,7 @@ from matplotlib.ticker import FixedFormatter, FixedLocator, NullFormatter
 from PIL import Image
 
 import create_plots as cp
+import table_with_error as tw
 
 OUT = Path("errorbar_figures")
 PSI = cp.PSI_TO_PA
@@ -20,6 +21,7 @@ FILES = [("FLU-prelab-Slowflow", "TA", "A"), ("FLU_Prelab_Highflow", "TB", "B"),
          ("FLU-lab-Slowflow", "A", "A"), ("FLU_Lab_Highflow", "B", "B")]
 DP_FULL_SCALE_PSID = {"A": 1.0, "B": 15.0}
 U_D = math.hypot(0.03e-3, 0.01e-3)
+U_D_BY_DIAMETER = {round(d, 4): u * INCH for _, d, u, _, _ in tw.pipes}
 U_L = math.hypot(0.5 / 16 * INCH, 1 / 16 * INCH)
 U_T = math.hypot(0.03, 0.2)
 MEAN_EPS_OVER_D = statistics.mean(s["roughness_in"] / s["diameter_in"] for s in cp.SPECS_BY_DIAMETER.values())
@@ -132,7 +134,7 @@ def summarize(run, rho, T_rho):
     run["U_P"] = math.hypot(u_a(p), u_b_dp(run["side"]))
     values = dict(Q=run["Q"], P=run["P"], D=run["D_in"] * INCH, L=run["L_in"] * INCH, rho=rho,
                   mu=cp.viscosity_kestin(run["T"]))
-    uncertainties = dict(Q=run["U_Q"], P=run["U_P"], D=U_D, rho=half_spread(cp.density_kell, T_rho),
+    uncertainties = dict(Q=run["U_Q"], P=run["U_P"], D=U_D_BY_DIAMETER.get(run["D_in"], U_D), rho=half_spread(cp.density_kell, T_rho),
                          mu=half_spread(cp.viscosity_kestin, run["T"]))
     run["Re"], run["U_Re"] = propagate(reynolds, values, uncertainties)
     if run["kind"] == "pipe":
@@ -150,7 +152,6 @@ def r_squared(measured, predicted):
 
 
 def save(fig, ax, filename, tight_bbox=False):
-    ax.grid(True, which="both", color="gray", linewidth=0.5, alpha=0.5)
     fig.tight_layout()
     fig.savefig(OUT / filename, dpi=200, bbox_inches="tight" if tight_bbox else None)
     plt.close(fig)
@@ -260,8 +261,6 @@ def regime_comparison_plot(points, in_regime, correlation, correlation_label, ti
     re_curve = [re_min * (re_max / re_min)**(i / 99) for i in range(100)]
     handles += ax.plot(re_curve, [correlation(x) for x in re_curve], "--", color="black", label=correlation_label)
     r2 = r_squared([p["f"] for p in points], [correlation(p["Re"]) for p in points])
-    ax.text(0.03, 0.03, f"R² = {r2:.4f}", transform=ax.transAxes, fontsize=10, va="bottom", ha="left",
-            bbox=dict(facecolor="white", edgecolor="gray", alpha=0.8))
     ax.set(xscale="log", yscale="log", xlabel="Reynolds Number", ylabel="Fanning Friction Factor", title=title)
     ax.legend(handles=handles, loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)
     save(fig, ax, filename, tight_bbox=True)
@@ -271,7 +270,7 @@ def regime_comparison_plot(points, in_regime, correlation, correlation_label, ti
 def all_correlations_plot(points, eps_over_d, filename):
     """Overlay all 5 correlations (each evaluated over its own applicable Re
     range, against all pipes) on one friction-factor-vs-Reynolds-number plot,
-    shaded by flow regime, with each correlation's own R^2 labeled."""
+    shaded by flow regime, with each correlation's R^2 printed to the console."""
     fig, ax = plt.subplots(figsize=(9, 7))
     re_min, re_max = min(p["Re"] for p in points), max(p["Re"] for p in points)
     ax.axvspan(re_min, cp.LAMINAR_RE, color="black", alpha=0.06)
@@ -307,8 +306,6 @@ def all_correlations_plot(points, eps_over_d, filename):
         r2 = r_squared([p["f"] for p in subset], [correlation(p["Re"]) for p in subset])
         r2_lines.append(f"{label}: R² = {r2:.4f}")
 
-    ax.text(0.015, 0.015, "\n".join(r2_lines), transform=ax.transAxes, fontsize=9, va="bottom", ha="left",
-            bbox=dict(facecolor="white", edgecolor="gray", alpha=0.85))
     ax.set(xscale="log", yscale="log", xlabel="Reynolds Number", ylabel="Fanning Friction Factor",
            title="Friction Factor vs. Reynolds Number: All Correlations (All Pipes)")
     ax.legend(handles=handles, loc="center left", bbox_to_anchor=(1.02, 0.5), fontsize=9)

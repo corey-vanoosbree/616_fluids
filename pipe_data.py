@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 from plot_style import style_table
 
-pipes = [("pvc", 0.408, 76, 4), ("pvc", 0.282, 70.5, 4), ("pvc", 0.47, 66, 4), ("steel", 0.307, 79.5, 8), ("copper", 0.31, 72.5, 6)]
+pipes = [("pvc", 0.4093, 76, 4), ("pvc", 0.2853, 70.5, 4), ("pvc", 0.4709, 66, 4), ("steel", 0.3063, 79.5, 8), ("copper", 0.3104, 72.5, 6)]
 #material, diameter in inches, length in inches, roughness in microinches
 
 def save_table_png(rows, filename="Table_1.png"):
